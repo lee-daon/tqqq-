@@ -45,8 +45,8 @@
 
 1. 저장소 클론
 ```bash
-git clone https://github.com/yourusername/tqqq-portfolio-simulation.git
-cd tqqq-portfolio-simulation
+git clone https://github.com/lee-daon/tqqq-.git
+cd tqqq-
 ```
 
 2. 의존성 설치

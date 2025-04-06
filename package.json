@@ -26,10 +26,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yourusername/tqqq-portfolio-simulation.git"
+    "url": "git+https://github.com/lee-daon/tqqq-.git"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/tqqq-portfolio-simulation/issues"
+    "url": "https://github.com/lee-daon/tqqq-/issues"
   },
-  "homepage": "https://github.com/yourusername/tqqq-portfolio-simulation#readme"
+  "homepage": "https://github.com/lee-daon/tqqq-#readme"
 }
