@@ -9,19 +9,24 @@ let efficientFrontierTQQQ_QQQ = null;
 let currentPeriod = 1; // 기본값: 1년
 let tqqqAssetRatio = 50; // 기본값: TQQQ 50%, 선택 자산 50%
 let currentAsset = 'gld'; // 기본값: GLD
+let globalCache = {}; // 현금 선택 시 사용할 전역 캐시
 let assetFullNames = {
   'gld': 'GLD (금)',
   'shy': 'SHY (단기 국채)',
   'tlt': 'TLT (장기 국채)',
   'schd': 'SCHD (배당주)',
-  'vnq': 'VNQ (부동산)'
+  'vnq': 'VNQ (부동산)',
+  'sqqq': 'SQQQ (인버스 QQQ 3X)',
+  'cash': '현금 (무위험)'
 };
 let assetColors = {
   'gld': 'rgba(255, 215, 0, 1)', // 금색
   'shy': 'rgba(0, 128, 0, 1)',   // 녹색
   'tlt': 'rgba(0, 0, 128, 1)',   // 남색
   'schd': 'rgba(128, 0, 128, 1)', // 보라색
-  'vnq': 'rgba(165, 42, 42, 1)'  // 갈색
+  'vnq': 'rgba(165, 42, 42, 1)', // 갈색
+  'sqqq': 'rgba(255, 0, 0, 1)',  // 빨간색
+  'cash': 'rgba(128, 128, 128, 1)' // 회색
 };
 
 // 이평선 전략 설정
@@ -149,12 +154,47 @@ function updateAssetLabels() {
 // 분석 데이터 가져오기
 async function fetchAnalysis() {
   try {
-    const response = await fetch(`/api/analyze?asset=${currentAsset}`);
-    const data = await response.json();
-    
-    portfolioData = data.portfolios;
-    rawData = data.rawData;
-    maData = data.maData;
+    // 현금 선택 시 API 호출하지 않고 직접 계산
+    if (currentAsset === 'cash') {
+      // TQQQ 데이터가 없으면 먼저 가져오기
+      if (!globalCache.tqqq) {
+        const tqqqResponse = await fetch('/api/stock/TQQQ');
+        globalCache.tqqq = await tqqqResponse.json();
+      }
+
+      // QQQ 데이터가 없으면 먼저 가져오기
+      if (!globalCache.qqq) {
+        const qqqResponse = await fetch('/api/stock/QQQ');
+        globalCache.qqq = await qqqResponse.json();
+      }
+
+      // 이동평균선 데이터가 없으면 먼저 가져오기
+      if (!globalCache.maData) {
+        const response = await fetch('/api/analyze?asset=gld');
+        const data = await response.json();
+        globalCache.maData = data.maData;
+      }
+
+      const cashData = generateCashData();
+      portfolioData = calculateCashPortfolioData(cashData);
+      rawData = {
+        tqqq: globalCache.tqqq || [],
+        cash: cashData,
+        qqq: globalCache.qqq || []
+      };
+      maData = globalCache.maData;
+    } else {
+      const response = await fetch(`/api/analyze?asset=${currentAsset}`);
+      const data = await response.json();
+      portfolioData = data.portfolios;
+      rawData = data.rawData;
+      maData = data.maData;
+      
+      // 현금 선택을 위해 전역 캐시에 저장
+      globalCache.tqqq = rawData.tqqq;
+      globalCache.qqq = rawData.qqq;
+      globalCache.maData = maData;
+    }
     
     // 모든 차트와 표 업데이트
     updateAllCharts();
@@ -171,6 +211,244 @@ async function fetchAnalysis() {
     console.error('Error fetching analysis data:', error);
     alert('데이터를 불러오는 중 오류가 발생했습니다.');
   }
+}
+
+// 현금 데이터 생성 함수
+function generateCashData() {
+  // 현재 시간 기준으로 10년 전 날짜 계산
+  const endDate = new Date();
+  const startDate = new Date();
+  startDate.setFullYear(startDate.getFullYear() - 10);
+  
+  const data = [];
+  const yearlyReturn = 0.02; // 연 2% 수익률
+  const dailyReturn = Math.pow(1 + yearlyReturn, 1/252) - 1;
+  
+  // 10년치 일일 데이터 생성 (영업일만)
+  let currentDate = new Date(startDate);
+  let currentValue = 100; // 초기값 $100
+  
+  while (currentDate <= endDate) {
+    // 주말 건너뛰기
+    if (currentDate.getDay() !== 0 && currentDate.getDay() !== 6) {
+      // 일별 증가율 적용
+      currentValue *= (1 + dailyReturn);
+      
+      data.push({
+        date: currentDate.toISOString().split('T')[0],
+        close: parseFloat(currentValue.toFixed(2)),
+        volume: 0,
+        symbol: 'CASH'
+      });
+    }
+    
+    // 다음 날짜로 이동
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+  
+  return data;
+}
+
+// 현금 포트폴리오 데이터 계산 함수
+function calculateCashPortfolioData(cashData) {
+  if (!globalCache.tqqq || globalCache.tqqq.length === 0) {
+    console.error('TQQQ 데이터가 없어 현금 포트폴리오를 계산할 수 없습니다.');
+    return [];
+  }
+  
+  const portfoliosData = [];
+  
+  // 동일한 날짜에 맞춰 필터링
+  const tqqqDates = new Set(globalCache.tqqq.map(item => item.date));
+  const filteredCashData = cashData.filter(item => tqqqDates.has(item.date));
+  
+  // 5% 단위로 TQQQ와 현금 포트폴리오 생성
+  for (let tqqqWeight = 0; tqqqWeight <= 100; tqqqWeight += 5) {
+    const cashWeight = 100 - tqqqWeight;
+    
+    // 각 기간별 성과 계산
+    const periodResults = {};
+    [1, 3, 5, 10].forEach(years => {
+      // 기간에 해당하는 데이터 필터링
+      const cutoffDate = new Date();
+      cutoffDate.setFullYear(cutoffDate.getFullYear() - years);
+      const cutoffDateString = cutoffDate.toISOString().split('T')[0];
+      
+      const periodTqqq = globalCache.tqqq.filter(item => item.date >= cutoffDateString);
+      const periodCash = filteredCashData.filter(item => item.date >= cutoffDateString);
+      
+      if (periodTqqq.length < 10 || periodCash.length < 10) {
+        console.log(`${years}년 데이터가 충분하지 않습니다. TQQQ: ${periodTqqq.length}, 현금: ${periodCash.length}`);
+        return;
+      }
+      
+      // 연평균 수익률, 변동성, MDD 계산
+      const annualReturn = calculateAnnualReturn(periodTqqq, periodCash, tqqqWeight);
+      const volatility = calculatePortfolioVolatility(periodTqqq, periodCash, tqqqWeight);
+      const sharpeRatio = (annualReturn - 0.02) / (volatility || 0.001); // 0으로 나누기 방지
+      const mdd = calculatePortfolioMDD(periodTqqq, periodCash, tqqqWeight);
+      
+      periodResults[`${years}year`] = {
+        annualReturn: annualReturn,
+        volatility: volatility,
+        sharpeRatio: sharpeRatio,
+        mdd: mdd
+      };
+    });
+    
+    portfoliosData.push({
+      tqqqWeight: tqqqWeight,
+      cashWeight: cashWeight,
+      ...periodResults
+    });
+  }
+  
+  return portfoliosData;
+}
+
+// 포트폴리오 연평균 수익률 계산
+function calculateAnnualReturn(data1, data2, weight1) {
+  const weight2 = 100 - weight1;
+  
+  // 시작과 끝 날짜 찾기
+  const startDate1 = new Date(data1[0].date);
+  const endDate1 = new Date(data1[data1.length - 1].date);
+  const startDate2 = new Date(data2[0].date);
+  const endDate2 = new Date(data2[data2.length - 1].date);
+  
+  // 공통 기간 구하기
+  const startDate = new Date(Math.max(startDate1.getTime(), startDate2.getTime()));
+  const endDate = new Date(Math.min(endDate1.getTime(), endDate2.getTime()));
+  
+  // 날짜 필터링
+  const filtered1 = data1.filter(item => {
+    const date = new Date(item.date);
+    return date >= startDate && date <= endDate;
+  });
+  
+  const filtered2 = data2.filter(item => {
+    const date = new Date(item.date);
+    return date >= startDate && date <= endDate;
+  });
+  
+  if (filtered1.length === 0 || filtered2.length === 0) {
+    console.error('공통 기간 데이터가 없습니다.');
+    return 0;
+  }
+  
+  // 첫날과 마지막 날 가격
+  const startPrice1 = filtered1[0].close;
+  const endPrice1 = filtered1[filtered1.length - 1].close;
+  const startPrice2 = filtered2[0].close;
+  const endPrice2 = filtered2[filtered2.length - 1].close;
+  
+  // 총 수익률 계산
+  const return1 = (endPrice1 / startPrice1) - 1;
+  const return2 = (endPrice2 / startPrice2) - 1;
+  
+  // 가중 평균 수익률
+  const weightedReturn = (return1 * (weight1 / 100)) + (return2 * (weight2 / 100));
+  
+  // 기간(년) 계산
+  const years = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24 * 365);
+  
+  // 연평균 수익률 계산 (CAGR)
+  const cagr = Math.pow(1 + weightedReturn, 1 / years) - 1;
+  
+  return cagr;
+}
+
+// 포트폴리오 변동성 계산
+function calculatePortfolioVolatility(data1, data2, weight1) {
+  const weight2 = 100 - weight1;
+  
+  // 날짜 매핑
+  const priceMap1 = new Map();
+  const priceMap2 = new Map();
+  
+  data1.forEach(item => priceMap1.set(item.date, item.close));
+  data2.forEach(item => priceMap2.set(item.date, item.close));
+  
+  // 공통 날짜만 사용
+  const commonDates = [...priceMap1.keys()].filter(date => priceMap2.has(date)).sort();
+  
+  if (commonDates.length < 2) {
+    return 0;
+  }
+  
+  // 일별 수익률 계산
+  const dailyReturns = [];
+  
+  for (let i = 1; i < commonDates.length; i++) {
+    const prevDate = commonDates[i-1];
+    const currDate = commonDates[i];
+    
+    const prevPrice1 = priceMap1.get(prevDate);
+    const currPrice1 = priceMap1.get(currDate);
+    const prevPrice2 = priceMap2.get(prevDate);
+    const currPrice2 = priceMap2.get(currDate);
+    
+    const return1 = (currPrice1 / prevPrice1) - 1;
+    const return2 = (currPrice2 / prevPrice2) - 1;
+    
+    const portfolioReturn = (return1 * (weight1 / 100)) + (return2 * (weight2 / 100));
+    dailyReturns.push(portfolioReturn);
+  }
+  
+  // 표준편차 계산
+  const mean = dailyReturns.reduce((sum, val) => sum + val, 0) / dailyReturns.length;
+  const variance = dailyReturns.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / dailyReturns.length;
+  const stdDev = Math.sqrt(variance);
+  
+  // 연간 변동성 (거래일 252일 기준)
+  return stdDev * Math.sqrt(252);
+}
+
+// 포트폴리오 최대 낙폭 계산
+function calculatePortfolioMDD(data1, data2, weight1) {
+  const weight2 = 100 - weight1;
+  
+  // 날짜 매핑
+  const priceMap1 = new Map();
+  const priceMap2 = new Map();
+  
+  data1.forEach(item => priceMap1.set(item.date, item.close));
+  data2.forEach(item => priceMap2.set(item.date, item.close));
+  
+  // 공통 날짜만 사용
+  const commonDates = [...priceMap1.keys()].filter(date => priceMap2.has(date)).sort();
+  
+  if (commonDates.length < 2) {
+    return 0;
+  }
+  
+  // 초기값으로 정규화
+  const initialValue1 = priceMap1.get(commonDates[0]);
+  const initialValue2 = priceMap2.get(commonDates[0]);
+  
+  // 포트폴리오 가치 계산
+  const portfolioValues = commonDates.map(date => {
+    const normalizedValue1 = priceMap1.get(date) / initialValue1;
+    const normalizedValue2 = priceMap2.get(date) / initialValue2;
+    return (normalizedValue1 * (weight1 / 100)) + (normalizedValue2 * (weight2 / 100));
+  });
+  
+  // MDD 계산
+  let peak = portfolioValues[0];
+  let mdd = 0;
+  
+  for (let i = 1; i < portfolioValues.length; i++) {
+    if (portfolioValues[i] > peak) {
+      peak = portfolioValues[i];
+    } else {
+      const drawdown = (peak - portfolioValues[i]) / peak;
+      if (drawdown > mdd) {
+        mdd = drawdown;
+      }
+    }
+  }
+  
+  return mdd;
 }
 
 // 현재 이평선 위치 상태 표시 업데이트
@@ -777,6 +1055,9 @@ function calculateMAStrategyPerformance(tqqqData, assetData) {
   // 마지막 교차 날짜 기록 (교차 제한용)
   let lastCrossoverDate = new Date(maWithPrices[0].date);
   
+  // 마지막 리밸런싱 비율
+  let targetTQQQRatio = lastTQQQRatio;
+  
   // 각 날짜에 대해 전략 적용 및 성과 계산
   for (let i = 1; i < maWithPrices.length; i++) {
     const currentData = maWithPrices[i];
@@ -788,9 +1069,14 @@ function calculateMAStrategyPerformance(tqqqData, assetData) {
     const currentAssetPrice = assetMap[currentDate];
     
     // 현재 포트폴리오 가치
-    let portfolioValue = (tqqqShares * currentTQQQPrice) + (assetShares * currentAssetPrice);
+    const tqqqValue = tqqqShares * currentTQQQPrice;
+    const assetValue = assetShares * currentAssetPrice;
+    const portfolioValue = tqqqValue + assetValue;
     
-    // 이평선 교차 확인 및 리밸런싱
+    // 현재 실제 TQQQ 비율
+    const currentTQQQRatio = tqqqValue / portfolioValue;
+    
+    // 이평선 교차 확인 및 목표 비율 변경
     if (currentAboveMA !== lastAboveMA) {
       // 현재 날짜를 Date 객체로 변환
       const currDate = new Date(currentDate);
@@ -798,20 +1084,22 @@ function calculateMAStrategyPerformance(tqqqData, assetData) {
       // 마지막 교차 이후 경과일 계산
       const daysSinceLastCross = Math.floor((currDate - lastCrossoverDate) / (1000 * 60 * 60 * 24));
       
-      // 최소 7일(1주일) 이상 경과한 경우에만 교차 처리
-      if (daysSinceLastCross >= 7) {
-        // 비율 변경
-        const newTQQQRatio = currentAboveMA ? aboveMAPercent / 100 : belowMAPercent / 100;
-        const newAssetRatio = 1 - newTQQQRatio;
-        
-        // 새로운 지분 계산
-        tqqqShares = (portfolioValue * newTQQQRatio) / currentTQQQPrice;
-        assetShares = (portfolioValue * newAssetRatio) / currentAssetPrice;
+      // 최소 2일(판매기한) 이상 경과한 경우에만 교차 처리
+      if (daysSinceLastCross >= 2) {
+        // 목표 비율 변경
+        targetTQQQRatio = currentAboveMA ? aboveMAPercent / 100 : belowMAPercent / 100;
         
         // 상태 업데이트
         lastAboveMA = currentAboveMA;
         lastCrossoverDate = currDate; // 마지막 교차 날짜 업데이트
       }
+    }
+    
+    // 리밸런싱 - 현재 비율과 목표 비율의 차이가 3%p 이상일 때만 리밸런싱
+    if (Math.abs(currentTQQQRatio - targetTQQQRatio) >= 0.03) {
+      // 새로운 지분 계산
+      tqqqShares = (portfolioValue * targetTQQQRatio) / currentTQQQPrice;
+      assetShares = (portfolioValue * (1 - targetTQQQRatio)) / currentAssetPrice;
     }
     
     // 해당 날짜의 포트폴리오 가치 추가
@@ -835,39 +1123,97 @@ function updateStrategyStats() {
   const currentTQQQRatio = currentAboveMA ? aboveMAPercent : belowMAPercent;
   const currentAssetRatio = 100 - currentTQQQRatio;
   
-  // 전략 교차점 횟수
-  const totalCrossovers = maData.crossovers.length;
+  // 실제 전체 교차 횟수 계산
+  const totalCrossovers = maData.crossovers ? maData.crossovers.length : 0;
   
-  // 주 1회 제한 적용 후 예상 교차 횟수 (대략적인 계산)
-  let weeklyLimitedCrossovers = 0;
+  // 2일 제한 적용 후 교차 횟수 계산
+  let limitedCrossovers = 0;
   let lastCrossDate = null;
   
-  maData.crossovers.forEach(cross => {
-    const crossDate = new Date(cross.date);
-    if (!lastCrossDate || (crossDate - lastCrossDate) >= (7 * 24 * 60 * 60 * 1000)) {
-      weeklyLimitedCrossovers++;
-      lastCrossDate = crossDate;
-    }
-  });
+  if (maData.crossovers && maData.crossovers.length > 0) {
+    // 교차점 날짜 순서대로 정렬
+    const sortedCrossovers = [...maData.crossovers].sort((a, b) => 
+      new Date(a.date).getTime() - new Date(b.date).getTime()
+    );
+    
+    // 2일 제한 적용하여 횟수 계산
+    sortedCrossovers.forEach(cross => {
+      const crossDate = new Date(cross.date);
+      if (!lastCrossDate || (crossDate - lastCrossDate) >= (2 * 24 * 60 * 60 * 1000)) {
+        limitedCrossovers++;
+        lastCrossDate = crossDate;
+      }
+    });
+  }
   
-  // 전략 성능 계산 (1, 3, 5, 10년)
-  const periodKey = `${currentPeriod}year`;
+  // 전략 성능 계산 (선택한 기간에 대해)
+  // 기간에 해당하는 데이터 필터링
+  const cutoffDate = new Date();
+  cutoffDate.setFullYear(cutoffDate.getFullYear() - currentPeriod);
+  const cutoffDateString = cutoffDate.toISOString().split('T')[0];
   
-  // TQQQ가 이평선 위일 때의 포트폴리오 성과
-  const abovePortfolio = portfolioData.find(item => item.tqqqWeight === aboveMAPercent);
-  // TQQQ가 이평선 아래일 때의 포트폴리오 성과
-  const belowPortfolio = portfolioData.find(item => item.tqqqWeight === belowMAPercent);
+  // 필터링된 데이터
+  const periodTqqq = rawData.tqqq.filter(item => item.date >= cutoffDateString);
+  const periodAsset = rawData[currentAsset].filter(item => item.date >= cutoffDateString);
   
-  // 현재 비율에 맞는 포트폴리오 성과
-  const currentPortfolio = currentAboveMA ? abovePortfolio : belowPortfolio;
-  
-  if (!currentPortfolio || !currentPortfolio[periodKey] || 
-      !abovePortfolio || !abovePortfolio[periodKey] || 
-      !belowPortfolio || !belowPortfolio[periodKey]) {
-    statsContainer.innerHTML = '<div class="alert alert-warning">선택한 비율에 대한 데이터가 없습니다.</div>';
+  if (periodTqqq.length < 10 || periodAsset.length < 10) {
+    statsContainer.innerHTML = '<div class="alert alert-warning">선택한 기간의 데이터가 충분하지 않습니다.</div>';
     return;
   }
   
+  // 전략 시뮬레이션 성과 계산
+  const strategyPerformance = calculateMAStrategyPerformance(periodTqqq, periodAsset);
+  if (strategyPerformance.length < 2) {
+    statsContainer.innerHTML = '<div class="alert alert-warning">전략 성과를 계산할 수 없습니다.</div>';
+    return;
+  }
+  
+  // 시작값과 종료값
+  const startValue = strategyPerformance[0];
+  const endValue = strategyPerformance[strategyPerformance.length - 1];
+  
+  // 전체 수익률
+  const totalReturn = (endValue / startValue) - 1;
+  
+  // 기간 계산 (연 단위)
+  const startDate = new Date(periodTqqq[0].date);
+  const endDate = new Date(periodTqqq[periodTqqq.length - 1].date);
+  const years = (endDate - startDate) / (1000 * 60 * 60 * 24 * 365);
+  
+  // 연평균 수익률 (CAGR)
+  const annualReturn = Math.pow(1 + totalReturn, 1 / years) - 1;
+  
+  // 최대 낙폭 계산
+  let peakValue = strategyPerformance[0];
+  let maxDrawdown = 0;
+  
+  for (let i = 1; i < strategyPerformance.length; i++) {
+    if (strategyPerformance[i] > peakValue) {
+      peakValue = strategyPerformance[i];
+    } else {
+      const drawdown = (peakValue - strategyPerformance[i]) / peakValue;
+      if (drawdown > maxDrawdown) {
+        maxDrawdown = drawdown;
+      }
+    }
+  }
+  
+  // 변동성 계산 (일별 수익률의 표준편차 * sqrt(252))
+  const dailyReturns = [];
+  for (let i = 1; i < strategyPerformance.length; i++) {
+    const dailyReturn = (strategyPerformance[i] / strategyPerformance[i-1]) - 1;
+    dailyReturns.push(dailyReturn);
+  }
+  
+  const mean = dailyReturns.reduce((sum, val) => sum + val, 0) / dailyReturns.length;
+  const variance = dailyReturns.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / dailyReturns.length;
+  const volatility = Math.sqrt(variance) * Math.sqrt(252);
+  
+  // 샤프 지수
+  const riskFreeRate = 0.02; // 2% 무위험 수익률 가정
+  const sharpeRatio = (annualReturn - riskFreeRate) / volatility;
+  
+  // 현재 TQQQ 상태에 따른 포트폴리오 비율
   statsContainer.innerHTML = `
     <div class="mb-2">
       <strong>현재 상태:</strong> TQQQ가 200일 이평선 
@@ -879,30 +1225,38 @@ function updateStrategyStats() {
       <strong>현재 포트폴리오:</strong> TQQQ ${currentTQQQRatio}% / ${currentAsset.toUpperCase()} ${currentAssetRatio}%
     </div>
     <div class="mb-2">
-      <strong>연평균 수익률:</strong> 
-      <span class="${currentPortfolio[periodKey].annualReturn > 0 ? 'text-success' : 'text-danger'}">
-        ${(currentPortfolio[periodKey].annualReturn * 100).toFixed(2)}%
+      <strong>전략 성과 - 연평균 수익률:</strong> 
+      <span class="${annualReturn > 0 ? 'text-success' : 'text-danger'}">
+        ${(annualReturn * 100).toFixed(2)}%
       </span>
     </div>
     <div class="mb-2">
-      <strong>샤프 지수:</strong> ${currentPortfolio[periodKey].sharpeRatio.toFixed(2)}
+      <strong>전략 성과 - 샤프 지수:</strong> ${sharpeRatio.toFixed(2)}
     </div>
     <div class="mb-2">
-      <strong>최대 낙폭 (MDD):</strong> 
-      <span class="text-danger">${(currentPortfolio[periodKey].mdd * 100).toFixed(2)}%</span>
+      <strong>전략 성과 - 최대 낙폭 (MDD):</strong> 
+      <span class="text-danger">${(maxDrawdown * 100).toFixed(2)}%</span>
     </div>
     <div class="mb-2">
-      <strong>변동성:</strong> ${(currentPortfolio[periodKey].volatility * 100).toFixed(2)}%
+      <strong>전략 성과 - 변동성:</strong> ${(volatility * 100).toFixed(2)}%
     </div>
     <div class="mb-2">
       <strong>전체 교차 횟수:</strong> ${totalCrossovers}회
-      <small class="text-muted">(주 1회 제한 시: 약 ${weeklyLimitedCrossovers}회)</small>
+      <small class="text-muted">(2일 판매기한 제한 시: ${limitedCrossovers}회)</small>
     </div>
     <div class="mt-3 small text-muted">
-      ${currentPeriod}년 데이터 기준 / 주 1회 교차 제한 적용됨
+      ${currentPeriod}년 데이터 기준 / 판매기한 2일 및 3%p 리밸런싱 적용됨
     </div>
   `;
   
   // 테이블에서 현재 전략에 해당하는 행 강조
   updatePortfolioTable();
 }
+
+// HTML 설명 업데이트
+document.getElementById('strategyDescription').innerHTML = `
+  <p>- TQQQ가 200일 이평선 <strong>위</strong>: <span id="aboveMA">TQQQ <span id="aboveRatio">70</span>% / 다른 자산 <span id="aboveComplementRatio">30</span>%</span></p>
+  <p>- TQQQ가 200일 이평선 <strong>아래</strong>: <span id="belowMA">TQQQ <span id="belowRatio">30</span>% / 다른 자산 <span id="belowComplementRatio">70</span>%</span></p>
+  <p class="text-info">- 교차 빈도: 최소 2일(판매기한) 간격으로 제한됨</p>
+  <p class="text-info">- 리밸런싱: 자산 비율이 목표치에서 3%p 이상 차이날 때 수행</p>
+`;

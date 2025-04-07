@@ -45,6 +45,8 @@
                   <option value="TLT">TLT (장기 국채)</option>
                   <option value="SCHD">SCHD (배당주)</option>
                   <option value="VNQ">VNQ (부동산)</option>
+                  <option value="SQQQ">SQQQ (인버스 QQQ 3X)</option>
+                  <option value="CASH">현금 (무위험)</option>
                 </select>
                 <button id="changeAssetBtn" class="btn btn-primary">자산 변경</button>
               </div>
@@ -56,7 +58,8 @@
                 <div id="strategyDescription" class="small mt-2 d-none">
                   <p>- TQQQ가 200일 이평선 <strong>위</strong>: <span id="aboveMA">TQQQ <span id="aboveRatio">70</span>% / 다른 자산 <span id="aboveComplementRatio">30</span>%</span></p>
                   <p>- TQQQ가 200일 이평선 <strong>아래</strong>: <span id="belowMA">TQQQ <span id="belowRatio">30</span>% / 다른 자산 <span id="belowComplementRatio">70</span>%</span></p>
-                  <p class="text-info">- 교차 빈도: 최소 7일(1주일) 간격으로 제한됨</p>
+                  <p class="text-info">- 교차 빈도: 최소 2일(판매기한) 간격으로 제한됨</p>
+                  <p class="text-info">- 리밸런싱: 자산 비율이 목표치에서 3%p 이상 차이날 때 수행</p>
                 </div>
                 <div class="d-none" id="strategySettings">
                   <div class="mb-2">

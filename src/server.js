@@ -15,6 +15,7 @@ const globalCache = {
   schd: null,
   vnq: null,
   qqq: null,
+  sqqq: null,
   lastFetch: null,
   portfolios: null,
   maData: null
@@ -35,7 +36,7 @@ app.get('/api/stock/:symbol', async (req, res) => {
       return res.json(globalCache[symbolLower]);
     }
     
-    // Yahoo Finance API 호출 (1년치 데이터)
+    // Yahoo Finance API 호출
     console.log(`Yahoo Finance API 호출: ${symbol}`);
     
     // 1일 간격으로 10년치 데이터 가져오기
@@ -71,7 +72,8 @@ app.get('/api/stock/:symbol', async (req, res) => {
         data.push({
           date: date.toISOString().split('T')[0],
           close: parseFloat(adjCloses[i].toFixed(2)),
-          volume: parseInt(quotes.volume[i])
+          volume: parseInt(quotes.volume[i]),
+          symbol: symbol.toUpperCase()
         });
       }
     }
@@ -85,75 +87,9 @@ app.get('/api/stock/:symbol', async (req, res) => {
     res.json(data);
   } catch (error) {
     console.error('Error fetching stock data:', error);
-    
-    // API 에러 시 모의 데이터로 대체
-    if (error.message.includes('API') || error.message.includes('data')) {
-      console.log(`API 오류로 모의 데이터 사용: ${req.params.symbol}`);
-      const mockData = generateMockData(req.params.symbol.toUpperCase());
-      
-      // 모의 데이터도 캐시에 저장
-      const symbolLower = req.params.symbol.toLowerCase();
-      globalCache[symbolLower] = mockData;
-      
-      res.json(mockData);
-    } else {
-      res.status(500).json({ error: error.message || 'Failed to fetch stock data' });
-    }
+    res.status(500).json({ error: error.message || 'Failed to fetch stock data' });
   }
 });
-
-// 모의 데이터 생성 함수 (API 오류 시 대체용)
-function generateMockData(symbol, years = 10) {
-  const today = new Date();
-  const data = [];
-  let price = symbol === 'TQQQ' ? 50 : 
-              symbol === 'GLD' ? 180 : 
-              symbol === 'SHY' ? 85 :
-              symbol === 'TLT' ? 100 :
-              symbol === 'SCHD' ? 75 :
-              symbol === 'VNQ' ? 90 :
-              symbol === 'QQQ' ? 300 : 70;
-  
-  // 일일 변동률 범위 설정
-  const volatility = symbol === 'TQQQ' ? 0.03 : 
-                    symbol === 'GLD' ? 0.012 : 
-                    symbol === 'SHY' ? 0.004 :
-                    symbol === 'TLT' ? 0.014 :
-                    symbol === 'SCHD' ? 0.012 :
-                    symbol === 'VNQ' ? 0.018 :
-                    symbol === 'QQQ' ? 0.015 : 0.02;
-  
-  // 평균 상승률 
-  const trend = symbol === 'TQQQ' ? 0.0008 : 
-                symbol === 'GLD' ? 0.0002 : 
-                symbol === 'SHY' ? 0.0001 :
-                symbol === 'TLT' ? 0.0001 :
-                symbol === 'SCHD' ? 0.0004 :
-                symbol === 'VNQ' ? 0.0003 :
-                symbol === 'QQQ' ? 0.0005 : 0.0004;
-
-  // 10년치 일일 데이터 생성 (약 2520 거래일)
-  const tradingDays = years * 252;
-  for (let i = tradingDays; i >= 0; i--) {
-    const date = new Date(today);
-    date.setDate(today.getDate() - i);
-    
-    // 주말 건너뛰기
-    if (date.getDay() === 0 || date.getDay() === 6) continue;
-    
-    // 가격 변동 계산
-    const change = (Math.random() * 2 - 1) * volatility + trend;
-    price = price * (1 + change);
-    
-    data.push({
-      date: date.toISOString().split('T')[0],
-      close: parseFloat(price.toFixed(2)),
-      volume: Math.floor(Math.random() * 10000000) + 5000000
-    });
-  }
-  
-  return data;
-}
 
 // 포트폴리오 분석 API 엔드포인트
 app.get('/api/analyze', async (req, res) => {
@@ -333,21 +269,7 @@ async function fetchStockDataIfNeeded(assetType = 'gld') {
     }
   } catch (error) {
     console.error('주식 데이터 가져오기 실패:', error);
-    
-    // 데이터 가져오기 실패 시 모의 데이터 사용
-    if (!globalCache.tqqq) globalCache.tqqq = generateMockData('TQQQ');
-    
-    // 선택한 자산의 모의 데이터
-    if (!globalCache[assetType]) {
-      globalCache[assetType] = generateMockData(assetType.toUpperCase());
-    }
-    
-    if (!globalCache.qqq) globalCache.qqq = generateMockData('QQQ');
-    
-    // 모의 이동평균선 데이터 생성
-    if (!globalCache.maData) {
-      globalCache.maData = calculateMovingAverage(globalCache.tqqq, 200);
-    }
+    throw error; // 에러를 상위로 전파하여 처리
   }
   
   console.log('모든 주식 데이터 로드 완료');
@@ -385,17 +307,43 @@ function calculateAnnualReturn(data1, data2, weight1, weight2) {
   const startValue2 = filteredData2[0].close;
   const endValue2 = filteredData2[filteredData2.length - 1].close;
   
+  // 기본 총 수익률 계산
   const returnRate1 = (endValue1 / startValue1) - 1;
-  const returnRate2 = (endValue2 / startValue2) - 1;
+  let returnRate2 = (endValue2 / startValue2) - 1;
   
-  const weightedReturn = (returnRate1 * (weight1 / 100)) + (returnRate2 * (weight2 / 100));
-  
-  // 기간을 년 단위로 계산 (실제 날짜 차이를 사용)
+  // 기간 계산 (연 단위)
   const days = (endDate - startDate) / (1000 * 60 * 60 * 24);
   const years = days / 365;
   
+  // 실제 연간 기간이 너무 짧은 경우 (1개월 미만) 연간 환산이 왜곡될 수 있음
+  if (years < 0.08) {
+    console.log(`경고: 데이터 기간이 너무 짧습니다 (${(years * 365).toFixed(0)}일). 수익률 계산이 왜곡될 수 있습니다.`);
+    return 0;
+  }
+  
+  // SCHD인 경우 배당수익률 추가
+  const symbol2 = filteredData2 && filteredData2.length > 0 && filteredData2[0].symbol;
+  if (symbol2 === 'SCHD') {
+    const dividendYield = 0.035 * years; // 연 3.5% 배당수익률
+    returnRate2 += dividendYield;
+    console.log(`SCHD 배당 적용: ${years.toFixed(2)}년 기간, 배당률 ${(dividendYield * 100).toFixed(2)}% 추가`);
+  }
+  
+  // 가중 평균 수익률 계산
+  const weightedReturn = (returnRate1 * (weight1 / 100)) + (returnRate2 * (weight2 / 100));
+  
   // 연평균 수익률 계산 (CAGR)
-  return Math.pow(1 + weightedReturn, 1 / years) - 1;
+  const cagr = Math.pow(1 + weightedReturn, 1 / years) - 1;
+  
+  // 계산 과정 로깅 (디버깅용)
+  console.log(`수익률 계산 [${filteredData1[0].symbol || 'Asset1'} ${weight1}% + ${symbol2 || 'Asset2'} ${weight2}%]:`);
+  console.log(`  기간: ${years.toFixed(2)}년 (${filteredData1.length}일)`);
+  console.log(`  ${filteredData1[0].symbol || 'Asset1'} 수익률: ${(returnRate1 * 100).toFixed(2)}%`);
+  console.log(`  ${symbol2 || 'Asset2'} 수익률: ${(returnRate2 * 100).toFixed(2)}%`);
+  console.log(`  가중평균 수익률: ${(weightedReturn * 100).toFixed(2)}%`);
+  console.log(`  연평균(CAGR): ${(cagr * 100).toFixed(2)}%`);
+  
+  return cagr;
 }
 
 // 변동성 계산 함수
