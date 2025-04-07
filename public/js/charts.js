@@ -171,9 +171,14 @@ export function updatePerformanceChart(rawData, maData, currentPeriod, currentAs
   
   // 데이터 필터링 (선택한 기간)
   const periodFilter = currentPeriod * 252; // 거래일 기준
-  const tqqqData = rawData.tqqq.slice(-periodFilter);
-  const assetData = rawData[currentAsset].slice(-periodFilter);
-  const qqqData = rawData.qqq.slice(-periodFilter);
+  let tqqqData = rawData.tqqq.slice(-periodFilter);
+  let assetData = rawData[currentAsset].slice(-periodFilter);
+  let qqqData = rawData.qqq.slice(-periodFilter);
+  
+  // 5일 간격으로 데이터 필터링
+  tqqqData = tqqqData.filter((_, index) => index % 5 === 0);
+  assetData = assetData.filter((_, index) => index % 5 === 0);
+  qqqData = qqqData.filter((_, index) => index % 5 === 0);
   
   // 초기값으로 정규화
   const tqqqNormalized = normalizeData(tqqqData);
@@ -181,7 +186,13 @@ export function updatePerformanceChart(rawData, maData, currentPeriod, currentAs
   const qqqNormalized = normalizeData(qqqData);
   
   // 항상 고정 비율 포트폴리오를 계산
-  const fixedPortfolioNormalized = calculatePortfolioPerformance(tqqqNormalized, assetNormalized, tqqqAssetRatio);
+  const fixedPortfolioNormalized = calculatePortfolioPerformance(
+      tqqqNormalized, 
+      assetNormalized, 
+      tqqqAssetRatio,
+      tqqqData, // raw tqqq data
+      assetData // raw asset data
+  );
   const fixedPortfolioLabel = `고정비율 (TQQQ ${tqqqAssetRatio}%, ${currentAsset.toUpperCase()} ${100-tqqqAssetRatio}%)`;
   
   // 날짜 레이블 생성 (x축)
@@ -307,7 +318,10 @@ export function updateMAChart(maData, currentPeriod) {
   
   // 데이터 필터링 (선택한 기간)
   const periodFilter = Math.min(currentPeriod * 252, maData.values.length); // 거래일 기준
-  const maValues = maData.values.slice(-periodFilter);
+  let maValues = maData.values.slice(-periodFilter);
+  
+  // 5일 간격으로 데이터 필터링
+  maValues = maValues.filter((_, index) => index % 5 === 0);
   
   // 날짜 레이블
   const labels = maValues.map(d => d.date);

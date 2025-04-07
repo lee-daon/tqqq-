@@ -1,157 +1,120 @@
-// 연평균 수익률 계산 함수
+// 리밸런싱 임계값 (3%p)
+const REBALANCE_THRESHOLD = 0.03;
+
+// 포트폴리오 시뮬레이션 함수 (리밸런싱 포함)
+function simulatePortfolio(data1, data2, weight1, weight2, rebalanceThreshold) {
+  if (data1.length < 2 || data2.length < 2) return [];
+
+  // 날짜 매핑
+  const dateMap1 = new Map();
+  const dateMap2 = new Map();
+  data1.forEach(d => dateMap1.set(d.date, d.close));
+  data2.forEach(d => dateMap2.set(d.date, d.close));
+
+  // 공통 날짜만 사용
+  const commonDates = [...dateMap1.keys()].filter(date => dateMap2.has(date)).sort();
+  if (commonDates.length < 2) return [];
+
+  const initialValue = 100; // 초기 포트폴리오 가치
+  const portfolioValues = [];
+  const targetRatio1 = weight1 / 100;
+  const targetRatio2 = weight2 / 100;
+
+  // 초기 지분 계산
+  const initialPrice1 = dateMap1.get(commonDates[0]);
+  const initialPrice2 = dateMap2.get(commonDates[0]);
+  let shares1 = (initialValue * targetRatio1) / initialPrice1;
+  let shares2 = (initialValue * targetRatio2) / initialPrice2;
+
+  // 첫 날 가치 추가
+  portfolioValues.push({ date: commonDates[0], value: initialValue });
+
+  for (let i = 1; i < commonDates.length; i++) {
+    const date = commonDates[i];
+    const price1 = dateMap1.get(date);
+    const price2 = dateMap2.get(date);
+
+    // 현재 포트폴리오 가치 계산
+    const value1 = shares1 * price1;
+    const value2 = shares2 * price2;
+    const currentTotalValue = value1 + value2;
+
+    // 현재 자산 비율 계산
+    const currentRatio1 = value1 / currentTotalValue;
+
+    // 리밸런싱 조건 확인
+    if (Math.abs(currentRatio1 - targetRatio1) > rebalanceThreshold) {
+      // 목표 비율로 리밸런싱
+      shares1 = (currentTotalValue * targetRatio1) / price1;
+      shares2 = (currentTotalValue * targetRatio2) / price2;
+    }
+    
+    portfolioValues.push({ date: date, value: currentTotalValue });
+  }
+
+  return portfolioValues;
+}
+
+// 연평균 수익률 계산 함수 (리밸런싱 적용)
 function calculateAnnualReturn(data1, data2, weight1, weight2) {
-  if (data1.length === 0 || data2.length === 0) return 0;
-  
-  // 동일한 기간의 데이터만 사용하기 위해 날짜 필터링
-  const startDate = Math.max(
-    new Date(data1[0].date).getTime(),
-    new Date(data2[0].date).getTime()
-  );
-  
-  const endDate = Math.min(
-    new Date(data1[data1.length - 1].date).getTime(),
-    new Date(data2[data2.length - 1].date).getTime()
-  );
-  
-  const filteredData1 = data1.filter(d => {
-    const time = new Date(d.date).getTime();
-    return time >= startDate && time <= endDate;
-  });
-  
-  const filteredData2 = data2.filter(d => {
-    const time = new Date(d.date).getTime();
-    return time >= startDate && time <= endDate;
-  });
-  
-  if (filteredData1.length === 0 || filteredData2.length === 0) return 0;
-  
-  const startValue1 = filteredData1[0].close;
-  const endValue1 = filteredData1[filteredData1.length - 1].close;
-  const startValue2 = filteredData2[0].close;
-  const endValue2 = filteredData2[filteredData2.length - 1].close;
-  
-  // 기본 총 수익률 계산
-  const returnRate1 = (endValue1 / startValue1) - 1;
-  let returnRate2 = (endValue2 / startValue2) - 1;
-  
-  // 기간 계산 (연 단위)
-  const days = (endDate - startDate) / (1000 * 60 * 60 * 24);
-  const years = days / 365;
-  
-  // 실제 연간 기간이 너무 짧은 경우 (1개월 미만) 연간 환산이 왜곡될 수 있음
-  if (years < 0.08) {
-    console.log(`경고: 데이터 기간이 너무 짧습니다 (${(years * 365).toFixed(0)}일). 수익률 계산이 왜곡될 수 있습니다.`);
-    return 0;
+  const portfolioValues = simulatePortfolio(data1, data2, weight1, weight2, REBALANCE_THRESHOLD);
+  if (portfolioValues.length < 2) return 0;
+
+  const startValue = portfolioValues[0].value;
+  const endValue = portfolioValues[portfolioValues.length - 1].value;
+  const startDate = new Date(portfolioValues[0].date);
+  const endDate = new Date(portfolioValues[portfolioValues.length - 1].date);
+
+  const years = (endDate - startDate) / (1000 * 60 * 60 * 24 * 365);
+  if (years < 0.08) { // 기간이 너무 짧으면 0 반환
+      console.warn(`CAGR 계산 기간 부족: ${years.toFixed(2)}년`);
+      return 0; 
   }
-  
-  // SCHD인 경우 배당수익률 추가
-  const symbol2 = filteredData2 && filteredData2.length > 0 && filteredData2[0].symbol;
-  if (symbol2 === 'SCHD') {
-    const dividendYield = 0.035 * years; // 연 3.5% 배당수익률
-    returnRate2 += dividendYield;
-    console.log(`SCHD 배당 적용: ${years.toFixed(2)}년 기간, 배당률 ${(dividendYield * 100).toFixed(2)}% 추가`);
-  }
-  
-  // 가중 평균 수익률 계산
-  const weightedReturn = (returnRate1 * (weight1 / 100)) + (returnRate2 * (weight2 / 100));
-  
-  // 연평균 수익률 계산 (CAGR)
-  const cagr = Math.pow(1 + weightedReturn, 1 / years) - 1;
-  
-  // 계산 과정 로깅 (디버깅용)
-  console.log(`수익률 계산 [${filteredData1[0].symbol || 'Asset1'} ${weight1}% + ${symbol2 || 'Asset2'} ${weight2}%]:`);
-  console.log(`  기간: ${years.toFixed(2)}년 (${filteredData1.length}일)`);
-  console.log(`  ${filteredData1[0].symbol || 'Asset1'} 수익률: ${(returnRate1 * 100).toFixed(2)}%`);
-  console.log(`  ${symbol2 || 'Asset2'} 수익률: ${(returnRate2 * 100).toFixed(2)}%`);
-  console.log(`  가중평균 수익률: ${(weightedReturn * 100).toFixed(2)}%`);
-  console.log(`  연평균(CAGR): ${(cagr * 100).toFixed(2)}%`);
-  
+
+  const totalReturn = (endValue / startValue) - 1;
+  const cagr = Math.pow(1 + totalReturn, 1 / years) - 1;
+
+  console.log(`수정된 CAGR 계산 [${data1[0]?.symbol || 'Asset1'} ${weight1}% + ${data2[0]?.symbol || 'Asset2'} ${weight2}%] (${years.toFixed(2)}년): ${(cagr * 100).toFixed(2)}%`);
   return cagr;
 }
 
-// 변동성 계산 함수
+// 변동성 계산 함수 (리밸런싱 적용)
 function calculateVolatility(data1, data2, weight1, weight2) {
-  if (data1.length < 2 || data2.length < 2) return 0;
-  
-  // 동일한 날짜의 데이터만 사용하기 위해 날짜 매핑
-  const dateMap1 = new Map();
-  const dateMap2 = new Map();
-  
-  data1.forEach(d => dateMap1.set(d.date, d.close));
-  data2.forEach(d => dateMap2.set(d.date, d.close));
-  
-  // 두 데이터셋 모두에 있는 날짜만 사용
-  const commonDates = [...dateMap1.keys()].filter(date => dateMap2.has(date)).sort();
-  
-  if (commonDates.length < 2) return 0;
-  
-  // 일일 수익률 계산
+  const portfolioValues = simulatePortfolio(data1, data2, weight1, weight2, REBALANCE_THRESHOLD);
+  if (portfolioValues.length < 2) return 0;
+
   const dailyReturns = [];
-  
-  for (let i = 1; i < commonDates.length; i++) {
-    const prevDate = commonDates[i-1];
-    const currDate = commonDates[i];
-    
-    const return1 = (dateMap1.get(currDate) / dateMap1.get(prevDate)) - 1;
-    const return2 = (dateMap2.get(currDate) / dateMap2.get(prevDate)) - 1;
-    
-    const weightedReturn = (return1 * (weight1 / 100)) + (return2 * (weight2 / 100));
-    dailyReturns.push(weightedReturn);
+  for (let i = 1; i < portfolioValues.length; i++) {
+    const dailyReturn = (portfolioValues[i].value / portfolioValues[i - 1].value) - 1;
+    dailyReturns.push(dailyReturn);
   }
-  
-  // 표준편차 계산
+
   const mean = dailyReturns.reduce((sum, val) => sum + val, 0) / dailyReturns.length;
   const squaredDiffs = dailyReturns.map(val => Math.pow(val - mean, 2));
   const variance = squaredDiffs.reduce((sum, val) => sum + val, 0) / squaredDiffs.length;
   const dailyVolatility = Math.sqrt(variance);
-  
-  // 연간 변동성으로 변환 (거래일 기준)
-  return dailyVolatility * Math.sqrt(252);
+
+  return dailyVolatility * Math.sqrt(252); // 연간 변동성 (거래일 252일 기준)
 }
 
-// 최대 낙폭 (MDD) 계산 함수
+// 최대 낙폭 (MDD) 계산 함수 (리밸런싱 적용)
 function calculateMDD(data1, data2, weight1, weight2) {
-  if (data1.length < 2 || data2.length < 2) return 0;
-  
-  // 동일한 날짜의 데이터만 사용하기 위해 날짜 매핑
-  const dateMap1 = new Map();
-  const dateMap2 = new Map();
-  
-  data1.forEach(d => dateMap1.set(d.date, d.close));
-  data2.forEach(d => dateMap2.set(d.date, d.close));
-  
-  // 두 데이터셋 모두에 있는 날짜만 사용
-  const commonDates = [...dateMap1.keys()].filter(date => dateMap2.has(date)).sort();
-  
-  if (commonDates.length < 2) return 0;
-  
-  // 포트폴리오 가치 시뮬레이션
-  const portfolioValues = [];
-  const initialValue1 = dateMap1.get(commonDates[0]);
-  const initialValue2 = dateMap2.get(commonDates[0]);
-  
-  for (const date of commonDates) {
-    const value1 = dateMap1.get(date) / initialValue1;
-    const value2 = dateMap2.get(date) / initialValue2;
-    const weightedValue = (value1 * (weight1 / 100)) + (value2 * (weight2 / 100));
-    portfolioValues.push(weightedValue);
-  }
-  
-  // MDD 계산
-  let maxValue = portfolioValues[0];
+  const portfolioValues = simulatePortfolio(data1, data2, weight1, weight2, REBALANCE_THRESHOLD);
+  if (portfolioValues.length < 2) return 0;
+
+  let maxValue = portfolioValues[0].value;
   let maxDrawdown = 0;
-  
+
   for (let i = 1; i < portfolioValues.length; i++) {
-    if (portfolioValues[i] > maxValue) {
-      maxValue = portfolioValues[i];
+    const currentValue = portfolioValues[i].value;
+    if (currentValue > maxValue) {
+      maxValue = currentValue;
     }
-    
-    const drawdown = (maxValue - portfolioValues[i]) / maxValue;
+    const drawdown = (maxValue - currentValue) / maxValue;
     if (drawdown > maxDrawdown) {
       maxDrawdown = drawdown;
     }
   }
-  
   return maxDrawdown;
 }
 
