@@ -74,7 +74,7 @@ function calculateAnnualReturn(data1, data2, weight1, weight2) {
   const totalReturn = (endValue / startValue) - 1;
   const cagr = Math.pow(1 + totalReturn, 1 / years) - 1;
 
-  console.log(`수정된 CAGR 계산 [${data1[0]?.symbol || 'Asset1'} ${weight1}% + ${data2[0]?.symbol || 'Asset2'} ${weight2}%] (${years.toFixed(2)}년): ${(cagr * 100).toFixed(2)}%`);
+  //console.log(`수정된 CAGR 계산 [${data1[0]?.symbol || 'Asset1'} ${weight1}% + ${data2[0]?.symbol || 'Asset2'} ${weight2}%] (${years.toFixed(2)}년): ${(cagr * 100).toFixed(2)}%`);
   return cagr;
 }
 

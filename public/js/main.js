@@ -31,7 +31,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners(state, {
     updateAllCharts,
     updatePerformanceChart: () => updatePerformanceChartWithState(),
-    updateSelectedPortfolioStats: () => updateSelectedPortfolioStatsWithState(),
+    updateSelectedPortfolioStats: () => updateSelectedPortfolioStats(state.rawData, state.currentPeriod, state.currentAsset, state.tqqqAssetRatio),
     updateAssetLabels: () => updateAssetLabels(state.currentAsset),
     fetchAnalysis: loadData,
     updateStrategyStats: () => updateStrategyStatsWithState()
@@ -311,7 +311,7 @@ function updateAllCharts() {
   updateEfficientFrontierTQQQ_Asset(state.portfolioData, state.rawData, state.currentPeriod, state.currentAsset, assetColors);
   updatePortfolioTable(state.portfolioData, state.currentPeriod, state.useMAStrategy, isAboveMA(state.maData), state.tqqqAssetRatio, state.aboveMAPercent, state.belowMAPercent);
   updatePerformanceChartWithState();
-  updateSelectedPortfolioStatsWithState();
+  updateSelectedPortfolioStats(state.rawData, state.currentPeriod, state.currentAsset, state.tqqqAssetRatio);
   updateMAChart(state.maData, state.currentPeriod);
 }
 
@@ -326,15 +326,6 @@ function updatePerformanceChartWithState() {
     state.useMAStrategy, 
     state.aboveMAPercent, 
     state.belowMAPercent
-  );
-}
-
-// 선택 포트폴리오 통계 업데이트 래퍼 함수
-function updateSelectedPortfolioStatsWithState() {
-  updateSelectedPortfolioStats(
-    state.portfolioData, 
-    state.currentPeriod, 
-    state.tqqqAssetRatio
   );
 }
 

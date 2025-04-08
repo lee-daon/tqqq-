@@ -5,47 +5,67 @@ import { calculateMovingAverage } from '../utils/calculators.js';
 // 주식 데이터를 가져와서 전역 캐시에 저장
 async function fetchStockDataIfNeeded(assetType = 'gld', PORT) {
   try {
-    // 이미 데이터가 있는지 확인
-    if (!globalCache.tqqq) {
-      const tqqqResponse = await axios.get(`http://localhost:${PORT}/api/stock/TQQQ`);
-      globalCache.tqqq = tqqqResponse.data;
+    // TQQQ 데이터 가져오기 (MA 계산 위해 추가 데이터 필요)
+    if (!globalCache.tqqq_full) { // 캐시 키 변경
+      console.log('TQQQ 전체 데이터 로드 중...');
+      // fetchYahooFinanceData 호출 시 추가 기간 요청 (약 10개월)
+      const tqqqData = await fetchYahooFinanceData('TQQQ', true);
+      globalCache.tqqq_full = tqqqData;
     }
     
-    // 선택한 자산 로드
+    // QQQ 데이터 가져오기 (추가 기간 불필요)
+    if (!globalCache.qqq) {
+      console.log('QQQ 데이터 로드 중...');
+      globalCache.qqq = await fetchYahooFinanceData('QQQ', false);
+    }
+
+    // 선택한 자산 로드 (추가 기간 불필요)
     if (!globalCache[assetType]) {
       const assetSymbol = assetType.toUpperCase();
       console.log(`${assetSymbol} 데이터 로드 중...`);
-      const assetResponse = await axios.get(`http://localhost:${PORT}/api/stock/${assetSymbol}`);
-      globalCache[assetType] = assetResponse.data;
+      globalCache[assetType] = await fetchYahooFinanceData(assetSymbol, false);
     }
     
-    if (!globalCache.qqq) {
-      const qqqResponse = await axios.get(`http://localhost:${PORT}/api/stock/QQQ`);
-      globalCache.qqq = qqqResponse.data;
-    }
-    
-    // 200일 이동평균선 계산 (아직 없는 경우)
+    // 200일 이동평균선 계산 (확장된 TQQQ 데이터 사용)
     if (!globalCache.maData) {
-      globalCache.maData = calculateMovingAverage(globalCache.tqqq, 200);
+      console.log('200일 이동평균선 계산 중...');
+      globalCache.maData = calculateMovingAverage(globalCache.tqqq_full, 200);
     }
+
+    // 클라이언트에 전달할 TQQQ 데이터 (실제 요청 기간만)
+    // maData 계산 후 tqqq_full에서 필요한 기간만 잘라내어 tqqq 캐시에 저장
+    if (!globalCache.tqqq) {
+        const tenYearsAgo = new Date();
+        tenYearsAgo.setFullYear(tenYearsAgo.getFullYear() - 10);
+        const tenYearsAgoString = tenYearsAgo.toISOString().split('T')[0];
+        globalCache.tqqq = globalCache.tqqq_full.filter(item => item.date >= tenYearsAgoString);
+        console.log(`클라이언트용 TQQQ 데이터 필터링 완료 (최근 10년)`);
+    }
+
   } catch (error) {
     console.error('주식 데이터 가져오기 실패:', error);
     throw error; // 에러를 상위로 전파하여 처리
   }
   
-  console.log('모든 주식 데이터 로드 완료');
+  console.log('모든 주식 데이터 로드 및 준비 완료');
 }
 
 // Yahoo Finance로부터 주식 데이터 가져오기
-async function fetchYahooFinanceData(symbol) {
+async function fetchYahooFinanceData(symbol, needExtraPeriod = false) { // needExtraPeriod 인자 추가
   try {
-    // 1일 간격으로 10년치 데이터 가져오기
+    // 1일 간격으로 데이터 가져오기
     const endDate = Math.floor(Date.now() / 1000);
-    const startDate = endDate - (60 * 60 * 24 * 365 * 10); // 10년 전
+    let baseStartDate = endDate - (60 * 60 * 24 * 365 * 10); // 기본 10년 전
+
+    // TQQQ의 경우 MA 계산을 위해 추가 기간 요청
+    if (needExtraPeriod) {
+        baseStartDate -= (60 * 60 * 24 * 30 * 10); // 약 10개월 추가 (넉넉하게)
+        console.log(`${symbol}: MA 계산을 위해 약 10개월 추가 데이터 요청`);
+    }
     
     const response = await axios.get(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`, {
       params: {
-        period1: startDate,
+        period1: baseStartDate,
         period2: endDate,
         interval: '1d',
         events: 'history',
@@ -81,6 +101,7 @@ async function fetchYahooFinanceData(symbol) {
     // 날짜순 정렬
     data.sort((a, b) => new Date(a.date) - new Date(b.date));
     
+    console.log(`${symbol}: ${data.length} 개의 데이터 가져옴 (${data[0].date} ~ ${data[data.length - 1].date})`);
     return data;
   } catch (error) {
     console.error(`Error fetching ${symbol} data:`, error);

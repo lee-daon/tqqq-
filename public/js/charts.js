@@ -175,28 +175,61 @@ export function updatePerformanceChart(rawData, maData, currentPeriod, currentAs
   let assetData = rawData[currentAsset].slice(-periodFilter);
   let qqqData = rawData.qqq.slice(-periodFilter);
   
-  // 5일 간격으로 데이터 필터링
-  tqqqData = tqqqData.filter((_, index) => index % 5 === 0);
-  assetData = assetData.filter((_, index) => index % 5 === 0);
-  qqqData = qqqData.filter((_, index) => index % 5 === 0);
+  // 데이터 필터링 및 동일한 날짜 사용을 위한 전처리
+  let commonDates = new Set();
+  
+  // 첫 번째 단계: 모든 자산의 날짜 집합 생성
+  tqqqData.forEach(item => commonDates.add(item.date));
+  assetData.forEach(item => commonDates.add(item.date));
+  qqqData.forEach(item => commonDates.add(item.date));
+  
+  // 두 번째 단계: 공통 날짜만 사용하도록 필터링
+  commonDates = Array.from(commonDates).sort();
+  
+  // 날짜로 인덱싱된 맵 생성
+  const tqqqMap = {};
+  const assetMap = {};
+  const qqqMap = {};
+  
+  tqqqData.forEach(item => tqqqMap[item.date] = item.close);
+  assetData.forEach(item => assetMap[item.date] = item.close);
+  qqqData.forEach(item => qqqMap[item.date] = item.close);
+  
+  // 실제 공통 날짜만 필터링 (모든 자산에 데이터가 있는 날짜)
+  const validDates = commonDates.filter(date => 
+    tqqqMap[date] !== undefined && 
+    assetMap[date] !== undefined && 
+    qqqMap[date] !== undefined
+  );
+  
+  // 필터링된 날짜를 기준으로 새 데이터 배열 생성
+  const filteredTqqq = validDates.map(date => ({ date, close: tqqqMap[date] }));
+  const filteredAsset = validDates.map(date => ({ date, close: assetMap[date] }));
+  const filteredQqq = validDates.map(date => ({ date, close: qqqMap[date] }));
+  
+  // 5일 간격으로 데이터 필터링 (성능 향상)
+  const sampledTqqq = filteredTqqq.filter((_, index) => index % 5 === 0);
+  const sampledAsset = filteredAsset.filter((_, index) => index % 5 === 0);
+  const sampledQqq = filteredQqq.filter((_, index) => index % 5 === 0);
   
   // 초기값으로 정규화
-  const tqqqNormalized = normalizeData(tqqqData);
-  const assetNormalized = normalizeData(assetData);
-  const qqqNormalized = normalizeData(qqqData);
+  const tqqqNormalized = normalizeData(sampledTqqq);
+  const assetNormalized = normalizeData(sampledAsset);
+  const qqqNormalized = normalizeData(sampledQqq);
   
-  // 항상 고정 비율 포트폴리오를 계산
+  // 고정 비율 포트폴리오 계산 (원본 데이터 전달)
   const fixedPortfolioNormalized = calculatePortfolioPerformance(
       tqqqNormalized, 
       assetNormalized, 
       tqqqAssetRatio,
-      tqqqData, // raw tqqq data
-      assetData // raw asset data
+      sampledTqqq, 
+      sampledAsset
   );
+  
   const fixedPortfolioLabel = `고정비율 (TQQQ ${tqqqAssetRatio}%, ${currentAsset.toUpperCase()} ${100-tqqqAssetRatio}%)`;
   
   // 날짜 레이블 생성 (x축)
-  const labels = tqqqData.map(d => d.date);
+  const labels = sampledTqqq.map(d => d.date);
   
   // 차트 데이터셋 - 기본 자산들
   const datasets = [
@@ -240,7 +273,7 @@ export function updatePerformanceChart(rawData, maData, currentPeriod, currentAs
   
   // 이평선 전략이 활성화되었을 때 전략 포트폴리오 추가
   if (useMAStrategy) {
-    const strategyPortfolioNormalized = calculateMAStrategyPerformance(tqqqData, assetData, maData, aboveMAPercent, belowMAPercent);
+    const { performanceData: strategyPortfolioNormalized } = calculateMAStrategyPerformance(sampledTqqq, sampledAsset, maData, aboveMAPercent, belowMAPercent);
     const strategyPortfolioLabel = `이평선 전략 (위:${aboveMAPercent}% 아래:${belowMAPercent}%)`;
     
     datasets.push({

@@ -1,5 +1,5 @@
 // utils.js에서 필요한 함수 import
-import { normalizeData, calculatePortfolioPerformance, isAboveMA, calculateMAStrategyPerformance } from './utils.js';
+import { normalizeData, calculatePortfolioPerformance, isAboveMA, calculateMAStrategyPerformance, calculateFixedRatioStats } from './utils.js';
 
 // UI 관련 함수들
 
@@ -119,9 +119,16 @@ export function updatePortfolioTable(portfolioData, currentPeriod, useMAStrategy
   tableBody.innerHTML = '';
   
   const periodKey = `${currentPeriod}year`;
-  const filteredData = portfolioData.filter(item => item[periodKey]);
+  // const filteredData = portfolioData.filter(item => item[periodKey]); // 필터링 제거
   
-  filteredData.forEach(item => {
+  // portfolioData가 null이거나 배열이 아닌 경우 처리
+  if (!Array.isArray(portfolioData)) {
+    console.error("portfolioData is not an array or is null");
+    // 필요하다면 사용자에게 오류 메시지를 표시하는 로직 추가
+    return;
+  }
+
+  portfolioData.forEach(item => {
     const row = document.createElement('tr');
     
     // 선택된 포트폴리오 강조 표시
@@ -141,49 +148,92 @@ export function updatePortfolioTable(portfolioData, currentPeriod, useMAStrategy
       row.classList.add('table-primary');
     }
     
+    // 기간 데이터 존재 여부 확인
+    const stats = item[periodKey];
+    const annualReturnText = stats ? `${(stats.annualReturn * 100).toFixed(2)}%` : '-';
+    const sharpeRatioText = stats ? stats.sharpeRatio.toFixed(2) : '-';
+    const mddText = stats ? `${(stats.mdd * 100).toFixed(2)}%` : '-';
+
     row.innerHTML = `
       <td>${item.tqqqWeight}%</td>
       <td>${100 - item.tqqqWeight}%</td>
-      <td>${(item[periodKey].annualReturn * 100).toFixed(2)}%</td>
-      <td>${item[periodKey].sharpeRatio.toFixed(2)}</td>
-      <td>${(item[periodKey].mdd * 100).toFixed(2)}%</td>
+      <td>${annualReturnText}</td>
+      <td>${sharpeRatioText}</td>
+      <td>${mddText}</td>
     `;
     
     tableBody.appendChild(row);
   });
 }
 
-// 선택한 포트폴리오 통계 업데이트
-export function updateSelectedPortfolioStats(portfolioData, currentPeriod, tqqqAssetRatio) {
+// 선택한 포트폴리오 통계 업데이트 (클라이언트 계산)
+export function updateSelectedPortfolioStats(rawData, currentPeriod, currentAsset, tqqqAssetRatio) {
   const statsContainer = document.getElementById('selectedPortfolioStats');
   
-  const periodKey = `${currentPeriod}year`;
-  const portfolioStats = portfolioData.find(item => item.tqqqWeight === tqqqAssetRatio);
-  
-  if (!portfolioStats || !portfolioStats[periodKey]) {
-    statsContainer.innerHTML = '<div class="alert alert-warning">데이터를 불러올 수 없습니다.</div>';
+  if (!rawData || !rawData.tqqq || !rawData[currentAsset]) {
+    statsContainer.innerHTML = '<div class="alert alert-warning">통계 계산에 필요한 원본 데이터가 없습니다.</div>';
+    return;
+  }
+
+  // 그래프와 동일한 데이터 준비 (기간 필터링 및 샘플링)
+  const periodFilter = currentPeriod * 252; // 거래일 기준
+  let tqqqData = rawData.tqqq.slice(-periodFilter);
+  let assetData = rawData[currentAsset].slice(-periodFilter);
+
+  // 날짜 매핑 생성
+  const tqqqMap = {};
+  const assetMap = {};
+  tqqqData.forEach(item => tqqqMap[item.date] = item.close);
+  assetData.forEach(item => assetMap[item.date] = item.close);
+
+  // 공통 날짜 찾기
+  const commonDates = Array.from(new Set([
+    ...Object.keys(tqqqMap),
+    ...Object.keys(assetMap)
+  ])).sort();
+
+  // 공통 날짜만 사용하도록 필터링
+  const validDates = commonDates.filter(date => 
+    tqqqMap[date] !== undefined && 
+    assetMap[date] !== undefined
+  );
+
+  // 필터링된 날짜를 기준으로 새 데이터 배열 생성
+  const filteredTqqq = validDates.map(date => ({ date, close: tqqqMap[date] }));
+  const filteredAsset = validDates.map(date => ({ date, close: assetMap[date] }));
+
+  // 5일 간격으로 데이터 샘플링
+  const sampledTqqq = filteredTqqq.filter((_, index) => index % 5 === 0);
+  const sampledAsset = filteredAsset.filter((_, index) => index % 5 === 0);
+
+  if (sampledTqqq.length < 2 || sampledAsset.length < 2) { // 통계 계산을 위해 최소 2개 데이터 필요
+    statsContainer.innerHTML = '<div class="alert alert-warning">선택한 기간의 샘플링 데이터가 통계 계산에 충분하지 않습니다.</div>';
+    return;
+  }
+
+  // 새로 추가한 함수를 사용하여 통계 계산
+  const stats = calculateFixedRatioStats(sampledTqqq, sampledAsset, tqqqAssetRatio);
+
+  if (!stats) {
+    statsContainer.innerHTML = '<div class="alert alert-warning">선택한 포트폴리오 통계를 계산할 수 없습니다.</div>';
     return;
   }
   
-  const annualReturn = (portfolioStats[periodKey].annualReturn * 100).toFixed(2);
-  const sharpeRatio = portfolioStats[periodKey].sharpeRatio.toFixed(2);
-  const mdd = (portfolioStats[periodKey].mdd * 100).toFixed(2);
-  const volatility = (portfolioStats[periodKey].volatility * 100).toFixed(2);
-  
+  // 통계 결과 UI 업데이트
   statsContainer.innerHTML = `
     <div class="mb-2">
       <strong>연평균 수익률:</strong> 
-      <span class="${annualReturn > 0 ? 'text-success' : 'text-danger'}">${annualReturn}%</span>
+      <span class="${stats.annualReturn > 0 ? 'text-success' : 'text-danger'}">${(stats.annualReturn * 100).toFixed(2)}%</span>
     </div>
     <div class="mb-2">
-      <strong>샤프 지수:</strong> ${sharpeRatio}
+      <strong>샤프 지수:</strong> ${stats.sharpeRatio.toFixed(2)}
     </div>
     <div class="mb-2">
       <strong>최대 낙폭 (MDD):</strong> 
-      <span class="text-danger">${mdd}%</span>
+      <span class="text-danger">${(stats.mdd * 100).toFixed(2)}%</span>
     </div>
     <div class="mb-2">
-      <strong>변동성:</strong> ${volatility}%
+      <strong>변동성:</strong> ${(stats.volatility * 100).toFixed(2)}%
     </div>
     <div class="mt-3 small text-muted">
       ${currentPeriod}년 데이터 기준
@@ -205,97 +255,51 @@ export function updateStrategyStats(portfolioData, rawData, maData, currentPerio
   const currentTQQQRatio = currentAboveMA ? aboveMAPercent : belowMAPercent;
   const currentAssetRatio = 100 - currentTQQQRatio;
   
-  // 전략 성능 계산 (선택한 기간에 대해)
-  // 기간에 해당하는 데이터 필터링
-  const cutoffDate = new Date();
-  cutoffDate.setFullYear(cutoffDate.getFullYear() - currentPeriod);
-  const cutoffDateString = cutoffDate.toISOString().split('T')[0];
+  // 그래프와 동일한 데이터 준비 (기간 필터링 및 샘플링)
+  const periodFilter = currentPeriod * 252; // 거래일 기준
+  let tqqqData = rawData.tqqq.slice(-periodFilter);
+  let assetData = rawData[currentAsset].slice(-periodFilter);
   
-  // 필터링된 데이터
-  const periodTqqq = rawData.tqqq.filter(item => item.date >= cutoffDateString);
-  const periodAsset = rawData[currentAsset].filter(item => item.date >= cutoffDateString);
+  // 날짜 매핑 생성
+  const tqqqMap = {};
+  const assetMap = {};
+  tqqqData.forEach(item => tqqqMap[item.date] = item.close);
+  assetData.forEach(item => assetMap[item.date] = item.close);
   
-  if (periodTqqq.length < 10 || periodAsset.length < 10) {
-    statsContainer.innerHTML = '<div class="alert alert-warning">선택한 기간의 데이터가 충분하지 않습니다.</div>';
+  // 공통 날짜 찾기
+  const commonDates = Array.from(new Set([
+    ...Object.keys(tqqqMap),
+    ...Object.keys(assetMap)
+  ])).sort();
+  
+  // 공통 날짜만 사용하도록 필터링
+  const validDates = commonDates.filter(date => 
+    tqqqMap[date] !== undefined && 
+    assetMap[date] !== undefined
+  );
+  
+  // 필터링된 날짜를 기준으로 새 데이터 배열 생성
+  const filteredTqqq = validDates.map(date => ({ date, close: tqqqMap[date] }));
+  const filteredAsset = validDates.map(date => ({ date, close: assetMap[date] }));
+  
+  // 5일 간격으로 데이터 샘플링
+  const sampledTqqq = filteredTqqq.filter((_, index) => index % 5 === 0);
+  const sampledAsset = filteredAsset.filter((_, index) => index % 5 === 0);
+  
+  if (sampledTqqq.length < 2 || sampledAsset.length < 2) { // 통계 계산을 위해 최소 2개 데이터 필요
+    statsContainer.innerHTML = '<div class="alert alert-warning">선택한 기간의 샘플링 데이터가 통계 계산에 충분하지 않습니다.</div>';
     return;
   }
-  
-  // 전략 시뮬레이션 성과 계산
-  const strategyPerformance = calculateMAStrategyPerformance(periodTqqq, periodAsset, maData, aboveMAPercent, belowMAPercent);
-  if (strategyPerformance.length < 2) {
-    statsContainer.innerHTML = '<div class="alert alert-warning">전략 성과를 계산할 수 없습니다.</div>';
+
+  // utils.js의 함수를 사용하여 통계 계산
+  const { stats } = calculateMAStrategyPerformance(sampledTqqq, sampledAsset, maData, aboveMAPercent, belowMAPercent);
+
+  if (!stats) {
+    statsContainer.innerHTML = '<div class="alert alert-warning">전략 통계를 계산할 수 없습니다.</div>';
     return;
   }
-  
-  // 시작값과 종료값
-  const startValue = strategyPerformance[0];
-  const endValue = strategyPerformance[strategyPerformance.length - 1];
-  
-  // 전체 수익률
-  const totalReturn = (endValue / startValue) - 1;
-  
-  // 기간 계산 (연 단위)
-  const startDate = new Date(periodTqqq[0].date);
-  const endDate = new Date(periodTqqq[periodTqqq.length - 1].date);
-  const years = (endDate - startDate) / (1000 * 60 * 60 * 24 * 365);
-  
-  // 연평균 수익률 (CAGR)
-  const annualReturn = Math.pow(1 + totalReturn, 1 / years) - 1;
-  
-  // 최대 낙폭 계산
-  let peakValue = strategyPerformance[0];
-  let maxDrawdown = 0;
-  
-  for (let i = 1; i < strategyPerformance.length; i++) {
-    if (strategyPerformance[i] > peakValue) {
-      peakValue = strategyPerformance[i];
-    } else {
-      const drawdown = (peakValue - strategyPerformance[i]) / peakValue;
-      if (drawdown > maxDrawdown) {
-        maxDrawdown = drawdown;
-      }
-    }
-  }
-  
-  // 변동성 계산 (일별 수익률의 표준편차 * sqrt(252))
-  const dailyReturns = [];
-  for (let i = 1; i < strategyPerformance.length; i++) {
-    const dailyReturn = (strategyPerformance[i] / strategyPerformance[i-1]) - 1;
-    dailyReturns.push(dailyReturn);
-  }
-  
-  const mean = dailyReturns.reduce((sum, val) => sum + val, 0) / dailyReturns.length;
-  const variance = dailyReturns.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / dailyReturns.length;
-  const volatility = Math.sqrt(variance) * Math.sqrt(252);
-  
-  // 샤프 지수
-  const riskFreeRate = 0.02; // 2% 무위험 수익률 가정
-  const sharpeRatio = (annualReturn - riskFreeRate) / volatility;
-  
-  // 실제 전체 교차 횟수 계산
-  const totalCrossovers = maData.crossovers ? maData.crossovers.length : 0;
-  
-  // 2일 제한 적용 후 교차 횟수 계산
-  let limitedCrossovers = 0;
-  let lastCrossDate = null;
-  
-  if (maData.crossovers && maData.crossovers.length > 0) {
-    // 교차점 날짜 순서대로 정렬
-    const sortedCrossovers = [...maData.crossovers].sort((a, b) => 
-      new Date(a.date).getTime() - new Date(b.date).getTime()
-    );
-    
-    // 2일 제한 적용하여 횟수 계산
-    sortedCrossovers.forEach(cross => {
-      const crossDate = new Date(cross.date);
-      if (!lastCrossDate || (crossDate - lastCrossDate) >= (2 * 24 * 60 * 60 * 1000)) {
-        limitedCrossovers++;
-        lastCrossDate = crossDate;
-      }
-    });
-  }
-  
-  // 현재 TQQQ 상태에 따른 포트폴리오 비율
+
+  // 통계 결과 UI 업데이트
   statsContainer.innerHTML = `
     <div class="mb-2">
       <strong>현재 상태:</strong> TQQQ가 200일 이평선 
@@ -308,23 +312,23 @@ export function updateStrategyStats(portfolioData, rawData, maData, currentPerio
     </div>
     <div class="mb-2">
       <strong>전략 성과 - 연평균 수익률:</strong> 
-      <span class="${annualReturn > 0 ? 'text-success' : 'text-danger'}">
-        ${(annualReturn * 100).toFixed(2)}%
+      <span class="${stats.annualReturn > 0 ? 'text-success' : 'text-danger'}">
+        ${(stats.annualReturn * 100).toFixed(2)}%
       </span>
     </div>
     <div class="mb-2">
-      <strong>전략 성과 - 샤프 지수:</strong> ${sharpeRatio.toFixed(2)}
+      <strong>전략 성과 - 샤프 지수:</strong> ${stats.sharpeRatio.toFixed(2)}
     </div>
     <div class="mb-2">
       <strong>전략 성과 - 최대 낙폭 (MDD):</strong> 
-      <span class="text-danger">${(maxDrawdown * 100).toFixed(2)}%</span>
+      <span class="text-danger">${(stats.mdd * 100).toFixed(2)}%</span>
     </div>
     <div class="mb-2">
-      <strong>전략 성과 - 변동성:</strong> ${(volatility * 100).toFixed(2)}%
+      <strong>전략 성과 - 변동성:</strong> ${(stats.volatility * 100).toFixed(2)}%
     </div>
     <div class="mb-2">
-      <strong>전체 교차 횟수:</strong> ${totalCrossovers}회
-      <small class="text-muted">(2일 판매기한 제한 시: ${limitedCrossovers}회)</small>
+      <strong>전체 교차 횟수:</strong> ${stats.totalCrossovers}회
+      <small class="text-muted">(2일 판매기한 제한 시: ${stats.limitedCrossovers}회)</small>
     </div>
     <div class="mt-3 small text-muted">
       ${currentPeriod}년 데이터 기준 / 판매기한 2일 및 3%p 리밸런싱 적용됨
