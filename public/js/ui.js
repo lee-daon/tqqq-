@@ -1,9 +1,25 @@
+/**
+ * 포트폴리오 분석 UI 모듈
+ * 사용자 인터페이스 요소 관리 및 이벤트 처리를 담당
+ * @module ui
+ */
+
 // utils.js에서 필요한 함수 import
 import { normalizeData, calculatePortfolioPerformance, isAboveMA, calculateMAStrategyPerformance, calculateFixedRatioStats } from './utils.js';
 
-// UI 관련 함수들
-
-// 이벤트 리스너 설정
+/**
+ * 이벤트 리스너 설정 함수
+ * 모든 UI 컨트롤의 이벤트 리스너를 초기화하고 등록
+ * 
+ * @param {Object} state - 애플리케이션 상태 객체
+ * @param {Object} callbacks - 콜백 함수 모음
+ * @param {Function} callbacks.updateAllCharts - 모든 차트 업데이트 함수
+ * @param {Function} callbacks.updatePerformanceChart - 성과 차트 업데이트 함수
+ * @param {Function} callbacks.updateSelectedPortfolioStats - 선택된 포트폴리오 통계 업데이트 함수
+ * @param {Function} callbacks.updateAssetLabels - 자산 라벨 업데이트 함수
+ * @param {Function} callbacks.fetchAnalysis - 데이터 가져오기 함수
+ * @param {Function} callbacks.updateStrategyStats - 전략 통계 업데이트 함수
+ */
 export function setupEventListeners(state, callbacks) {
   // 기간 선택 버튼
   const periodButtons = document.querySelectorAll('#period-selector button');
@@ -87,14 +103,24 @@ export function setupEventListeners(state, callbacks) {
   });
 }
 
-// HTML 요소에서 자산 이름 업데이트
+/**
+ * HTML 요소에서 자산 이름 업데이트 함수
+ * 선택된 자산 코드를 UI의 여러 부분에 표시
+ * 
+ * @param {string} currentAsset - 현재 선택된 자산 코드
+ */
 export function updateAssetLabels(currentAsset) {
   document.getElementById('asset1Label').textContent = currentAsset.toUpperCase();
   document.getElementById('asset2Label').textContent = currentAsset.toUpperCase();
   document.getElementById('asset3Label').textContent = currentAsset.toUpperCase();
 }
 
-// 현재 이평선 위치 상태 표시 업데이트
+/**
+ * 현재 이동평균선 위치 상태 표시 업데이트 함수
+ * TQQQ가 현재 200일 이동평균선 위/아래 상태인지 UI에 표시
+ * 
+ * @param {Object} maData - 이동평균선 데이터
+ */
 export function updateMACurrentStatus(maData) {
   const statusContainer = document.getElementById('maCurrentStatus');
   if (!maData || !maData.values || maData.values.length === 0) {
@@ -113,7 +139,18 @@ export function updateMACurrentStatus(maData) {
   `;
 }
 
-// 포트폴리오 테이블 업데이트
+/**
+ * 포트폴리오 테이블 업데이트 함수
+ * 다양한 비율의 포트폴리오 성과를 테이블 형태로 표시
+ * 
+ * @param {Array<Object>} portfolioData - 포트폴리오 분석 결과 데이터
+ * @param {number} currentPeriod - 현재 선택된 분석 기간 (년)
+ * @param {boolean} useMAStrategy - 이동평균선 전략 사용 여부
+ * @param {boolean} isAboveMA - 현재 TQQQ가 이평선 위에 있는지 여부
+ * @param {number} tqqqAssetRatio - 선택된 TQQQ 비중 (%)
+ * @param {number} aboveMAPercent - 이평선 위일 때 TQQQ 비중 (%)
+ * @param {number} belowMAPercent - 이평선 아래일 때 TQQQ 비중 (%)
+ */
 export function updatePortfolioTable(portfolioData, currentPeriod, useMAStrategy, isAboveMA, tqqqAssetRatio, aboveMAPercent, belowMAPercent) {
   const tableBody = document.getElementById('portfolioTable');
   tableBody.innerHTML = '';
@@ -166,7 +203,15 @@ export function updatePortfolioTable(portfolioData, currentPeriod, useMAStrategy
   });
 }
 
-// 선택한 포트폴리오 통계 업데이트 (클라이언트 계산)
+/**
+ * 선택한 포트폴리오 통계 업데이트 함수
+ * 현재 선택된 고정 비율 포트폴리오의 성과 통계를 계산하고 표시
+ * 
+ * @param {Object} rawData - 원시 주식 데이터
+ * @param {number} currentPeriod - 현재 선택된 분석 기간 (년)
+ * @param {string} currentAsset - 현재 선택된 자산 코드
+ * @param {number} tqqqAssetRatio - 선택된 TQQQ 비중 (%)
+ */
 export function updateSelectedPortfolioStats(rawData, currentPeriod, currentAsset, tqqqAssetRatio) {
   const statsContainer = document.getElementById('selectedPortfolioStats');
   
@@ -241,7 +286,18 @@ export function updateSelectedPortfolioStats(rawData, currentPeriod, currentAsse
   `;
 }
 
-// 200일 이평선 전략 통계 업데이트
+/**
+ * 이동평균선 전략 통계 업데이트 함수
+ * 200일 이동평균선 기반 동적 자산 배분 전략의 성과 통계를 계산하고 표시
+ * 
+ * @param {Array<Object>} portfolioData - 포트폴리오 분석 결과 데이터
+ * @param {Object} rawData - 원시 주식 데이터
+ * @param {Object} maData - 이동평균선 데이터
+ * @param {number} currentPeriod - 현재 선택된 분석 기간 (년)
+ * @param {string} currentAsset - 현재 선택된 자산 코드
+ * @param {number} aboveMAPercent - 이평선 위일 때 TQQQ 비중 (%)
+ * @param {number} belowMAPercent - 이평선 아래일 때 TQQQ 비중 (%)
+ */
 export function updateStrategyStats(portfolioData, rawData, maData, currentPeriod, currentAsset, aboveMAPercent, belowMAPercent) {
   const statsContainer = document.getElementById('strategyStats');
   

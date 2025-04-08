@@ -1,7 +1,19 @@
+/**
+ * 포트폴리오 분석 서비스 모듈
+ * TQQQ와 다른 자산의 포트폴리오 성과를 분석하는 함수 제공
+ * @module portfolioService
+ */
 import globalCache from '../utils/cache.js';
 import { calculateAnnualReturn, calculateVolatility, calculateMDD } from '../utils/calculators.js';
 
-// 포트폴리오 분석 서비스
+/**
+ * 다양한 비율의 TQQQ와 선택한 자산의 포트폴리오 성과 분석
+ * 5% 단위로 각 포트폴리오의 연평균 수익률, 변동성, 샤프 지수, MDD 계산
+ * 
+ * @async
+ * @param {string} assetType - 분석할 자산 유형 (기본값: 'gld')
+ * @returns {Array<Object>} 포트폴리오 분석 결과 배열 (다양한 비율별 통계)
+ */
 async function analyzePortfolio(assetType = 'gld') {
   // 포트폴리오 분석 데이터 생성
   const portfoliosData = [];

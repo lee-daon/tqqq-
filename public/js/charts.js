@@ -1,13 +1,31 @@
+/**
+ * 포트폴리오 분석 차트 모듈
+ * Chart.js를 사용한 다양한 포트폴리오 분석 차트 생성 및 관리
+ * @module charts
+ */
+
 // utils.js에서 필요한 함수 import
 import { normalizeData, calculatePortfolioPerformance, calculateMAStrategyPerformance } from './utils.js';
 import { assetColors } from './constants.js';
 
-// 차트 인스턴스 저장 변수
+/**
+ * 차트 인스턴스 저장 변수
+ * @type {Chart|null} - Chart.js 인스턴스
+ */
 let efficientFrontierChart = null;
 let performanceChart = null;
 let maChart = null;
 
-// 차트 관련 함수
+/**
+ * 효율적 투자선 차트 업데이트 함수
+ * TQQQ와 선택한 자산의 다양한 비율에 따른 위험-수익 분포를 보여주는 차트
+ * 
+ * @param {Array<Object>} portfolioData - 포트폴리오 분석 결과 데이터
+ * @param {Object} rawData - 원시 주식 데이터
+ * @param {number} currentPeriod - 현재 선택된 분석 기간 (년)
+ * @param {string} currentAsset - 현재 선택된 자산 코드
+ * @param {Object} assetColors - 자산별 색상 매핑 객체
+ */
 export function updateEfficientFrontierTQQQ_Asset(portfolioData, rawData, currentPeriod, currentAsset, assetColors) {
   const ctx = document.getElementById('efficientFrontierTQQQ_Asset').getContext('2d');
   
@@ -165,7 +183,19 @@ export function updateEfficientFrontierTQQQ_Asset(portfolioData, rawData, curren
   });
 }
 
-// 포트폴리오 성과 차트 업데이트
+/**
+ * 포트폴리오 성과 차트 업데이트 함수
+ * 시간에 따른 다양한 자산 및 포트폴리오 성과를 비교하는 라인 차트
+ * 
+ * @param {Object} rawData - 원시 주식 데이터
+ * @param {Object} maData - 이동평균선 데이터 
+ * @param {number} currentPeriod - 현재 선택된 분석 기간 (년)
+ * @param {string} currentAsset - 현재 선택된 자산 코드
+ * @param {number} tqqqAssetRatio - TQQQ 비중 (%)
+ * @param {boolean} useMAStrategy - 이동평균선 전략 사용 여부
+ * @param {number} aboveMAPercent - 이평선 위일 때 TQQQ 비중 (%)
+ * @param {number} belowMAPercent - 이평선 아래일 때 TQQQ 비중 (%)
+ */
 export function updatePerformanceChart(rawData, maData, currentPeriod, currentAsset, tqqqAssetRatio, useMAStrategy, aboveMAPercent, belowMAPercent) {
   const ctx = document.getElementById('performanceChart').getContext('2d');
   
@@ -337,7 +367,13 @@ export function updatePerformanceChart(rawData, maData, currentPeriod, currentAs
   });
 }
 
-// 200일 이동평균선 차트 업데이트
+/**
+ * 이동평균선 차트 업데이트 함수
+ * TQQQ의 가격과 200일 이동평균선을 보여주는 차트
+ * 
+ * @param {Object} maData - 이동평균선 데이터
+ * @param {number} currentPeriod - 현재 선택된 분석 기간 (년)
+ */
 export function updateMAChart(maData, currentPeriod) {
   const ctx = document.getElementById('maChart').getContext('2d');
   

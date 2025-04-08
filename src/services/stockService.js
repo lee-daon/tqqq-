@@ -1,8 +1,21 @@
+/**
+ * 주식 데이터 서비스 모듈
+ * Yahoo Finance API로부터 주식 데이터를 가져오고 관리하는 함수들 제공
+ * @module stockService
+ */
 import axios from 'axios';
 import globalCache from '../utils/cache.js';
 import { calculateMovingAverage } from '../utils/calculators.js';
 
-// 주식 데이터를 가져와서 전역 캐시에 저장
+/**
+ * 필요한 주식 데이터를 가져와서 전역 캐시에 저장
+ * TQQQ, QQQ 및 선택한 자산의 데이터를 로드하고 200일 이동평균선 계산
+ * 
+ * @async
+ * @param {string} assetType - 로드할 자산 유형 (기본값: 'gld')
+ * @param {number} PORT - 서버 포트 번호
+ * @throws {Error} 데이터 가져오기 실패 시 에러 발생
+ */
 async function fetchStockDataIfNeeded(assetType = 'gld', PORT) {
   try {
     // TQQQ 데이터 가져오기 (MA 계산 위해 추가 데이터 필요)
@@ -50,8 +63,16 @@ async function fetchStockDataIfNeeded(assetType = 'gld', PORT) {
   console.log('모든 주식 데이터 로드 및 준비 완료');
 }
 
-// Yahoo Finance로부터 주식 데이터 가져오기
-async function fetchYahooFinanceData(symbol, needExtraPeriod = false) { // needExtraPeriod 인자 추가
+/**
+ * Yahoo Finance API로부터 주식 데이터 가져오기
+ * 
+ * @async
+ * @param {string} symbol - 가져올 주식 심볼 (예: TQQQ, GLD)
+ * @param {boolean} needExtraPeriod - 이동평균선 계산을 위한 추가 기간 데이터 필요 여부 (기본값: false)
+ * @returns {Array<Object>} 주식 데이터 배열 (날짜, 종가, 거래량 정보 포함)
+ * @throws {Error} API 호출 실패 시 에러 발생
+ */
+async function fetchYahooFinanceData(symbol, needExtraPeriod = false) {
   try {
     // 1일 간격으로 데이터 가져오기
     const endDate = Math.floor(Date.now() / 1000);

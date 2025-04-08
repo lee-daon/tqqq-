@@ -1,4 +1,18 @@
-// API 관련 함수들
+/**
+ * API 통신 모듈
+ * 서버 API와의 통신을 담당하는 함수들 제공
+ * @module api
+ */
+
+/**
+ * 포트폴리오 분석 데이터 가져오기
+ * 선택한 자산 유형에 따른 TQQQ와의 포트폴리오 분석 결과를 가져옴
+ * 
+ * @async
+ * @param {string} assetType - 분석할 자산 유형 (예: 'gld', 'tlt')
+ * @returns {Promise<Object>} 포트폴리오 분석 결과 객체
+ * @throws {Error} API 요청 실패 시 에러 발생
+ */
 export async function fetchAnalysis(assetType) {
   try {
     const response = await fetch(`/api/analyze?asset=${assetType}`);
@@ -12,7 +26,12 @@ export async function fetchAnalysis(assetType) {
   }
 }
 
-// 현금 데이터 생성 함수
+/**
+ * 현금(무위험 자산) 데이터 생성 함수
+ * 실제 API 호출 없이 연 2% 수익률로 현금 자산의 가치 변화 데이터 생성
+ * 
+ * @returns {Array<Object>} 현금 자산 가치 데이터 배열 (날짜별 가격 정보)
+ */
 export function generateCashData() {
   // 현재 시간 기준으로 10년 전 날짜 계산
   const endDate = new Date();

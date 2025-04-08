@@ -1,10 +1,22 @@
+/**
+ * 주식 데이터 API 라우트 모듈
+ * Yahoo Finance로부터 주식 데이터를 가져오는 엔드포인트 제공
+ * @module stockRoutes
+ */
 import express from 'express';
 import globalCache from '../utils/cache.js';
 import { fetchYahooFinanceData } from '../services/stockService.js';
 
 const router = express.Router();
 
-// 주식 데이터 API 엔드포인트
+/**
+ * 주식 데이터 API 엔드포인트
+ * 특정 주식 심볼에 대한 히스토리컬 데이터를 반환
+ * 
+ * @route GET /api/stock/:symbol
+ * @param {string} symbol - 주식 심볼 (예: TQQQ, GLD)
+ * @returns {Object} 주식 데이터 (날짜별 가격 정보)
+ */
 router.get('/api/stock/:symbol', async (req, res) => {
   try {
     const { symbol } = req.params;

@@ -1,3 +1,8 @@
+/**
+ * 포트폴리오 분석 API 라우트 모듈
+ * TQQQ와 다른 자산의 포트폴리오 성과 분석을 위한 엔드포인트 제공
+ * @module portfolioRoutes
+ */
 import express from 'express';
 import globalCache from '../utils/cache.js';
 import { analyzePortfolio } from '../services/portfolioService.js';
@@ -5,7 +10,14 @@ import { fetchStockDataIfNeeded } from '../services/stockService.js';
 
 const router = express.Router();
 
-// 포트폴리오 분석 API 엔드포인트
+/**
+ * 포트폴리오 분석 API 엔드포인트
+ * TQQQ와 선택한 자산의 다양한 비율의 포트폴리오에 대한 분석 데이터 반환
+ * 
+ * @route GET /api/analyze
+ * @param {string} asset - 분석할 자산 유형 (기본값: gld)
+ * @returns {Object} 포트폴리오 분석 결과 (다양한 비율별 수익률, 변동성, 샤프 지수, MDD)
+ */
 router.get('/api/analyze', async (req, res) => {
   try {
     const assetType = req.query.asset || 'gld'; // 기본값은 GLD

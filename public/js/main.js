@@ -1,3 +1,9 @@
+/**
+ * 메인 애플리케이션 모듈
+ * 애플리케이션의 진입점과 전체 상태 관리를 담당
+ * @module main
+ */
+
 // 외부 모듈 import
 import { assetColors } from './constants.js';
 import { fetchAnalysis, generateCashData } from './api.js';
@@ -5,7 +11,22 @@ import { normalizeData, calculatePortfolioPerformance, isAboveMA, calculateMAStr
 import { updateEfficientFrontierTQQQ_Asset, updatePerformanceChart, updateMAChart } from './charts.js';
 import { setupEventListeners, updateAssetLabels, updateMACurrentStatus, updatePortfolioTable, updateSelectedPortfolioStats, updateStrategyStats } from './ui.js';
 
-// 애플리케이션 상태 관리
+/**
+ * 애플리케이션 전역 상태 객체
+ * 포트폴리오 분석과 UI 상태를 저장
+ * 
+ * @type {Object}
+ * @property {Array|null} portfolioData - 포트폴리오 분석 결과 데이터
+ * @property {Object|null} rawData - 원시 주식 데이터 (tqqq, 선택 자산, qqq 등)
+ * @property {Object|null} maData - 이동평균선 데이터
+ * @property {number} currentPeriod - 현재 선택된 분석 기간 (년)
+ * @property {number} tqqqAssetRatio - TQQQ 비중 (%)
+ * @property {string} currentAsset - 현재 선택된 자산 코드
+ * @property {Object} globalCache - 데이터 캐싱을 위한 객체
+ * @property {boolean} useMAStrategy - 이동평균선 전략 사용 여부
+ * @property {number} aboveMAPercent - 이평선 위일 때 TQQQ 비중 (%)
+ * @property {number} belowMAPercent - 이평선 아래일 때 TQQQ 비중 (%)
+ */
 const state = {
   portfolioData: null,
   rawData: null,
@@ -19,7 +40,10 @@ const state = {
   belowMAPercent: 30
 };
 
-// 페이지 로드 시 실행
+/**
+ * 페이지 로드 시 실행되는 초기화 함수
+ * 차트 크기 설정, 데이터 로드, 이벤트 리스너 등록을 담당
+ */
 document.addEventListener('DOMContentLoaded', () => {
   // 차트 캔버스 크기 고정
   fixChartCanvasSize();
@@ -41,7 +65,13 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('maSection').classList.remove('d-none');
 });
 
-// 데이터 로드 함수
+/**
+ * 데이터 로드 함수
+ * 선택된 자산에 따라 API 데이터를 가져오거나 현금 데이터를 생성
+ * 
+ * @async
+ * @throws {Error} 데이터 로드 실패 시 에러 발생
+ */
 async function loadData() {
   try {
     // 현금 선택 시 API 호출하지 않고 직접 계산
@@ -102,7 +132,14 @@ async function loadData() {
   }
 }
 
-// 현금 포트폴리오 데이터 계산 함수
+/**
+ * 현금 포트폴리오 데이터 계산 함수
+ * TQQQ와 현금의 다양한 비율로 구성된 포트폴리오 성과를 계산
+ * 
+ * @param {Array<Object>} cashData - 현금 자산 데이터 배열
+ * @param {Array<Object>} tqqqData - TQQQ 데이터 배열
+ * @returns {Array<Object>} 각 비율별 성과가 계산된 포트폴리오 데이터 배열
+ */
 function calculateCashPortfolioData(cashData, tqqqData) {
   if (!tqqqData || tqqqData.length === 0) {
     console.error('TQQQ 데이터가 없어 현금 포트폴리오를 계산할 수 없습니다.');
@@ -159,7 +196,15 @@ function calculateCashPortfolioData(cashData, tqqqData) {
   return portfoliosData;
 }
 
-// 포트폴리오 연평균 수익률 계산
+/**
+ * 포트폴리오 연평균 수익률 계산 함수
+ * 두 자산으로 구성된 포트폴리오의 연간 복합 수익률(CAGR) 계산
+ * 
+ * @param {Array<Object>} data1 - 첫 번째 자산 데이터 배열 (TQQQ)
+ * @param {Array<Object>} data2 - 두 번째 자산 데이터 배열
+ * @param {number} weight1 - 첫 번째 자산의 비중 (%)
+ * @returns {number} 연평균 수익률 (소수점 형태, 예: 0.1 = 10%)
+ */
 function calculateAnnualReturn(data1, data2, weight1) {
   const weight2 = 100 - weight1;
   
@@ -211,7 +256,15 @@ function calculateAnnualReturn(data1, data2, weight1) {
   return cagr;
 }
 
-// 포트폴리오 변동성 계산
+/**
+ * 포트폴리오 변동성 계산 함수
+ * 두 자산으로 구성된 포트폴리오의 연간 변동성(표준편차) 계산
+ * 
+ * @param {Array<Object>} data1 - 첫 번째 자산 데이터 배열 (TQQQ)
+ * @param {Array<Object>} data2 - 두 번째 자산 데이터 배열
+ * @param {number} weight1 - 첫 번째 자산의 비중 (%)
+ * @returns {number} 연간 변동성 (표준편차)
+ */
 function calculatePortfolioVolatility(data1, data2, weight1) {
   const weight2 = 100 - weight1;
   
@@ -257,7 +310,15 @@ function calculatePortfolioVolatility(data1, data2, weight1) {
   return stdDev * Math.sqrt(252);
 }
 
-// 포트폴리오 최대 낙폭 계산
+/**
+ * 포트폴리오 최대 낙폭(MDD) 계산 함수
+ * 두 자산으로 구성된 포트폴리오의 최대 낙폭 계산
+ * 
+ * @param {Array<Object>} data1 - 첫 번째 자산 데이터 배열 (TQQQ)
+ * @param {Array<Object>} data2 - 두 번째 자산 데이터 배열
+ * @param {number} weight1 - 첫 번째 자산의 비중 (%)
+ * @returns {number} 최대 낙폭 (소수점 형태, 예: 0.3 = 30%)
+ */
 function calculatePortfolioMDD(data1, data2, weight1) {
   const weight2 = 100 - weight1;
   
@@ -304,7 +365,10 @@ function calculatePortfolioMDD(data1, data2, weight1) {
   return mdd;
 }
 
-// 모든 차트 및 표 업데이트
+/**
+ * 모든 차트 및 표 업데이트 함수
+ * 애플리케이션의 모든 시각화 요소를 최신 상태로 업데이트
+ */
 function updateAllCharts() {
   if (!state.portfolioData || !state.rawData) return;
   
@@ -315,7 +379,10 @@ function updateAllCharts() {
   updateMAChart(state.maData, state.currentPeriod);
 }
 
-// 성과 차트 업데이트 래퍼 함수
+/**
+ * 성과 차트 업데이트 래퍼 함수
+ * 현재 상태를 기반으로 성과 차트 업데이트
+ */
 function updatePerformanceChartWithState() {
   updatePerformanceChart(
     state.rawData, 
@@ -329,7 +396,10 @@ function updatePerformanceChartWithState() {
   );
 }
 
-// 전략 통계 업데이트 래퍼 함수
+/**
+ * 전략 통계 업데이트 래퍼 함수
+ * 현재 상태를 기반으로 이동평균선 전략 통계 업데이트
+ */
 function updateStrategyStatsWithState() {
   updateStrategyStats(
     state.portfolioData,

@@ -1,6 +1,16 @@
-// 유틸리티 함수들
+/**
+ * 포트폴리오 분석 유틸리티 모듈
+ * 데이터 처리, 포트폴리오 성과 계산, 전략 시뮬레이션 등의 유틸리티 함수 제공
+ * @module utils
+ */
 
-// 데이터 정규화 함수 (초기값 = 100)
+/**
+ * 데이터 정규화 함수
+ * 초기값을 100으로 설정하여 가격 데이터를 정규화
+ * 
+ * @param {Array<Object>} data - 가격 데이터 배열
+ * @returns {Array<number>} 초기값 100으로 정규화된 가격 데이터 배열
+ */
 export function normalizeData(data) {
   if (!data || data.length === 0) return [];
   
@@ -8,7 +18,17 @@ export function normalizeData(data) {
   return data.map(item => (item.close / initialValue) * 100);
 }
 
-// 포트폴리오 성과 계산 함수 (고정 비율, 리밸런싱 적용)
+/**
+ * 포트폴리오 성과 계산 함수 (고정 비율, 리밸런싱 적용)
+ * 두 자산으로 구성된L 포트폴리오의 성과를 계산하며, 리밸런싱 로직 포함
+ * 
+ * @param {Array<number>} data1 - 첫 번째 자산의 정규화된 가격 데이터
+ * @param {Array<number>} data2 - 두 번째 자산의 정규화된 가격 데이터
+ * @param {number} weight1 - 첫 번째 자산의 목표 비중 (%)
+ * @param {Array<Object>} rawData1 - 첫 번째 자산의 원본 가격 데이터 (날짜와 가격 포함)
+ * @param {Array<Object>} rawData2 - 두 번째 자산의 원본 가격 데이터 (날짜와 가격 포함)
+ * @returns {Array<number>} 포트폴리오 성과 데이터 (초기값 100 기준 정규화)
+ */
 export function calculatePortfolioPerformance(data1, data2, weight1, rawData1, rawData2) {
   const weight2 = 100 - weight1;
   const targetRatio1 = weight1 / 100;
@@ -134,7 +154,14 @@ export function calculatePortfolioPerformance(data1, data2, weight1, rawData1, r
   }
 }
 
-// 200일 이동평균선 기준 TQQQ가 위인지 아래인지 확인
+/**
+ * TQQQ가 200일 이동평균선 위에 있는지 확인하는 함수
+ * 가장 최근 데이터 기준으로 위/아래 여부 반환
+ * 
+ * @param {Object} maData - 이동평균선 데이터 객체
+ * @param {Array} maData.values - 날짜별 이동평균선 데이터 배열
+ * @returns {boolean} true: 이동평균선 위, false: 이동평균선 아래
+ */
 export function isAboveMA(maData) {
   if (!maData || !maData.values || maData.values.length === 0) {
     return true; // 데이터가 없는 경우 기본값
@@ -145,7 +172,19 @@ export function isAboveMA(maData) {
   return latestData.aboveMA;
 }
 
-// 200일 이동평균선 전략 성과 계산
+/**
+ * 200일 이동평균선 전략 성과 계산 함수
+ * 이동평균선 교차 시 자산 배분 비율을 동적으로 변경하는 전략의 성과 시뮬레이션
+ * 
+ * @param {Array<Object>} tqqqData - TQQQ 가격 데이터 배열
+ * @param {Array<Object>} assetData - 보조 자산 가격 데이터 배열
+ * @param {Object} maData - 이동평균선 데이터 객체
+ * @param {number} aboveMAPercent - 이평선 위일 때 TQQQ 비중 (%)
+ * @param {number} belowMAPercent - 이평선 아래일 때 TQQQ 비중 (%)
+ * @returns {Object} 성과 데이터와 통계 지표
+ * @returns {Array<number>} performanceData - 성과 지표 배열 (초기값 100 기준)
+ * @returns {Object} stats - 성과 통계 (연평균 수익률, 샤프 지수, 최대낙폭, 변동성 등)
+ */
 export function calculateMAStrategyPerformance(tqqqData, assetData, maData, aboveMAPercent, belowMAPercent) {
   if (!maData || !maData.values || maData.values.length === 0 ||
       !tqqqData || !assetData || tqqqData.length === 0 || assetData.length === 0) {
@@ -284,7 +323,15 @@ export function calculateMAStrategyPerformance(tqqqData, assetData, maData, abov
   return { performanceData, stats };
 }
 
-// 고정 비율 포트폴리오 통계 계산 함수 (샘플링된 데이터 사용)
+/**
+ * 고정 비율 포트폴리오 통계 계산 함수
+ * 두 자산으로 구성된 고정 비율 포트폴리오의 성과 지표를 계산
+ * 
+ * @param {Array<Object>} data1 - 첫 번째 자산 데이터 배열
+ * @param {Array<Object>} data2 - 두 번째 자산 데이터 배열
+ * @param {number} weight1 - 첫 번째 자산의 비중 (%)
+ * @returns {Object|null} 성과 통계 (연평균 수익률, 샤프 지수, 최대낙폭, 변동성) 또는 계산 불가 시 null
+ */
 export function calculateFixedRatioStats(data1, data2, weight1) {
   const weight2 = 100 - weight1;
   if (!data1 || !data2 || data1.length < 2 || data2.length < 2) {
@@ -388,7 +435,12 @@ export function calculateFixedRatioStats(data1, data2, weight1) {
   };
 }
 
-// 차트 캔버스 크기 고정 함수
+/**
+ * 차트 캔버스 크기 고정 함수
+ * 차트 렌더링 시 캔버스 크기를 고정하여 일관된 UI 유지
+ * 
+ * @returns {void}
+ */
 export function fixChartCanvasSize() {
   const canvasElements = document.querySelectorAll('canvas');
   canvasElements.forEach(canvas => {
