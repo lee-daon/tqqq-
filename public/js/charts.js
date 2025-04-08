@@ -349,40 +349,48 @@ export function updateMAChart(maData, currentPeriod) {
     return;
   }
   
+  // 선택된 기간의 실제 시작 날짜 계산
+  const fullPeriodData = maData.values;
+  const endDate = new Date(fullPeriodData[fullPeriodData.length - 1].date);
+  const startDate = new Date(endDate);
+  startDate.setFullYear(startDate.getFullYear() - currentPeriod);
+  const startTime = startDate.getTime();
+
   // 데이터 필터링 (선택한 기간)
-  const periodFilter = Math.min(currentPeriod * 252, maData.values.length); // 거래일 기준
-  let maValues = maData.values.slice(-periodFilter);
+  let periodFilteredValues = fullPeriodData.filter(d => new Date(d.date).getTime() >= startTime);
   
-  // 5일 간격으로 데이터 필터링
-  maValues = maValues.filter((_, index) => index % 5 === 0);
+  // 5일 간격으로 데이터 샘플링
+  const sampledValues = periodFilteredValues.filter((_, index) => index % 5 === 0);
   
-  // 날짜 레이블
-  const labels = maValues.map(d => d.date);
+  // 샘플링된 데이터가 없으면 중단
+  if (sampledValues.length === 0) {
+      if (maChart) { maChart.destroy(); maChart = null; }
+      return;
+  }
+
+  // 날짜 레이블 (샘플링된 데이터 기준)
+  const labels = sampledValues.map(d => d.date);
   
-  // 가격 데이터
-  const prices = maValues.map(d => d.price);
+  // 가격 데이터 (샘플링된 데이터 기준)
+  const prices = sampledValues.map(d => d.price);
   
-  // 이동평균선 데이터
-  const mas = maValues.map(d => d.ma);
+  // 이동평균선 데이터 (샘플링된 데이터 기준)
+  const mas = sampledValues.map(d => d.ma);
   
-  // 교차점 데이터
+  // 교차점 데이터 필터링 (선택된 기간 전체 기준)
   const crossovers = maData.crossovers.filter(c => {
     const dateTime = new Date(c.date).getTime();
-    const startTime = new Date(maValues[0].date).getTime();
-    return dateTime >= startTime;
+    const periodEndTime = new Date(sampledValues[sampledValues.length - 1].date).getTime(); // 샘플링된 마지막 날짜
+    // 실제 기간 시작 시간과 샘플링된 마지막 시간 사이의 교차점만 필터링
+    return dateTime >= startTime && dateTime <= periodEndTime; 
   });
   
-  // 이평선 위/아래 상태를 분류하는 데이터
+  // 이평선 위/아래 상태를 분류하는 데이터 (샘플링 기준)
   const abovePoints = [];
   const belowPoints = [];
-  
-  for (let i = 0; i < maValues.length; i++) {
-    const point = {
-      x: i,
-      y: maValues[i].price
-    };
-    
-    if (maValues[i].aboveMA) {
+  for (let i = 0; i < sampledValues.length; i++) {
+    const point = { x: i, y: sampledValues[i].price };
+    if (sampledValues[i].aboveMA) {
       abovePoints.push(point);
       belowPoints.push(null);
     } else {
@@ -391,13 +399,28 @@ export function updateMAChart(maData, currentPeriod) {
     }
   }
   
-  // 교차점에 대한 참조선
-  const annotations = crossovers.map((c, index) => {
-    const dateIndex = labels.indexOf(c.date);
+  // 교차점에 대한 참조선 생성 (가장 가까운 샘플링 날짜 매핑)
+  const annotations = crossovers.map((c) => {
+    const crossTime = new Date(c.date).getTime();
+    let closestIndex = -1;
+    let minDiff = Infinity;
+
+    // 샘플링된 레이블 중 가장 가까운 날짜 찾기
+    labels.forEach((labelDate, index) => {
+        const labelTime = new Date(labelDate).getTime();
+        const diff = Math.abs(crossTime - labelTime);
+        if (diff < minDiff) {
+            minDiff = diff;
+            closestIndex = index;
+        }
+    });
+
+    if (closestIndex === -1) return null; // 가까운 날짜 못 찾으면 주석 생성 안함
+
     return {
       type: 'line',
-      xMin: dateIndex,
-      xMax: dateIndex,
+      xMin: closestIndex,
+      xMax: closestIndex,
       borderColor: c.crossType === 'up' ? 'rgba(75, 192, 192, 0.7)' : 'rgba(255, 99, 132, 0.7)',
       borderWidth: 2,
       borderDash: [5, 5],
@@ -411,7 +434,7 @@ export function updateMAChart(maData, currentPeriod) {
         }
       }
     };
-  });
+  }).filter(annotation => annotation !== null); // null인 주석 제거
 
   // 차트 업데이트/생성
   if (maChart) {
@@ -428,7 +451,7 @@ export function updateMAChart(maData, currentPeriod) {
           label: 'TQQQ 가격',
           data: prices,
           borderColor: 'rgba(255, 99, 132, 1)',
-          backgroundColor: 'rgba(255, 99, 132, 0)',
+          backgroundColor: 'rgba(255, 99, 132, 0)', 
           borderWidth: 1,
           pointRadius: 0,
           pointHoverRadius: 3
@@ -437,7 +460,7 @@ export function updateMAChart(maData, currentPeriod) {
           label: '200일 이동평균선',
           data: mas,
           borderColor: 'rgba(54, 162, 235, 1)',
-          backgroundColor: 'rgba(54, 162, 235, 0)',
+          backgroundColor: 'rgba(54, 162, 235, 0)', 
           borderWidth: 2,
           pointRadius: 0,
           pointHoverRadius: 3
@@ -460,7 +483,7 @@ export function updateMAChart(maData, currentPeriod) {
           intersect: false
         },
         annotation: {
-          annotations: annotations
+          annotations: annotations // 수정된 주석 배열 사용
         }
       },
       scales: {
